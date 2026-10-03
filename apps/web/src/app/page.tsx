@@ -1,237 +1,375 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Header } from '@/components/layout/Header';
-import { BackendHealthResponse } from '@/types';
-import { fetchBackendHealth } from '@/lib/api';
-import { Database, Server, Settings, CheckCircle2, AlertCircle, RefreshCw, Cpu, Layers } from 'lucide-react';
+import { TacticalMapViewer } from '@/components/gis/TacticalMapViewer';
+import { OverviewTab } from '@/components/operations/OverviewTab';
+import { InventoryRiskTab } from '@/components/operations/InventoryRiskTab';
+import { ForecastingTab } from '@/components/operations/ForecastingTab';
+import { RouteCorridorTab } from '@/components/operations/RouteCorridorTab';
+import { ShipmentsTab } from '@/components/operations/ShipmentsTab';
+import { RecommendationsTab } from '@/components/operations/RecommendationsTab';
+import { SimulationTab } from '@/components/operations/SimulationTab';
+import {
+  fetchAlerts,
+  fetchBackendHealth,
+  fetchForecasts,
+  fetchInventoryRisks,
+  fetchLocations,
+  fetchNetworkGeoJSON,
+  fetchRecommendations,
+  fetchRoutePlan,
+  fetchShipments,
+  fetchSupplies,
+  fetchVehicles,
+  runSimulation,
+  triggerForecastTraining,
+  triggerOptimization,
+} from '@/lib/api';
+import {
+  AlertItem,
+  BackendHealthResponse,
+  DemandForecastItem,
+  ForecastMetrics,
+  GeoJSONFeatureCollection,
+  InventoryRiskItem,
+  LocationNode,
+  OptimizationRunResult,
+  RecommendationItem,
+  RoutePlanResult,
+  ShipmentItemRecord,
+  SimulationResult,
+  SupplyItem,
+  VehicleItem,
+} from '@/types';
+import {
+  Activity,
+  BarChart2,
+  FileText,
+  Layers,
+  Map as MapIcon,
+  Navigation,
+  RefreshCw,
+  Shield,
+  Truck,
+  Zap,
+} from 'lucide-react';
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<string>('overview');
   const [health, setHealth] = useState<BackendHealthResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [lastChecked, setLastChecked] = useState<string>('');
+  const [locations, setLocations] = useState<LocationNode[]>([]);
+  const [supplies, setSupplies] = useState<SupplyItem[]>([]);
+  const [geoJson, setGeoJson] = useState<GeoJSONFeatureCollection | null>(null);
+  const [risks, setRisks] = useState<InventoryRiskItem[]>([]);
+  const [forecasts, setForecasts] = useState<DemandForecastItem[]>([]);
+  const [forecastMetrics, setForecastMetrics] = useState<ForecastMetrics | null>(null);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationItem[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
+  const [shipments, setShipments] = useState<ShipmentItemRecord[]>([]);
+  const [selectedNode, setSelectedNode] = useState<LocationNode | null>(null);
+  const [routePlan, setRoutePlan] = useState<RoutePlanResult | null>(null);
+  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
 
-  const checkStatus = async () => {
+  // Loading states
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
+  const [isForecasting, setIsForecasting] = useState<boolean>(false);
+  const [isRouting, setIsRouting] = useState<boolean>(false);
+  const [isSimulating, setIsSimulating] = useState<boolean>(false);
+
+  const loadAllData = useCallback(async () => {
     setLoading(true);
-    const data = await fetchBackendHealth();
-    setHealth(data);
-    setLoading(false);
-    setLastChecked(new Date().toLocaleTimeString());
-  };
+    try {
+      const [
+        healthData,
+        locsData,
+        suppliesData,
+        geoData,
+        risksData,
+        fcData,
+        alertsData,
+        recsData,
+        vehData,
+        shipData,
+      ] = await Promise.all([
+        fetchBackendHealth(),
+        fetchLocations(),
+        fetchSupplies(),
+        fetchNetworkGeoJSON(),
+        fetchInventoryRisks(),
+        fetchForecasts(),
+        fetchAlerts(),
+        fetchRecommendations(),
+        fetchVehicles(),
+        fetchShipments(),
+      ]);
 
-  useEffect(() => {
-    checkStatus();
-    const interval = setInterval(checkStatus, 10000);
-    return () => clearInterval(interval);
+      if (healthData) setHealth(healthData);
+      if (locsData.length > 0) {
+        setLocations(locsData);
+        setSelectedNode((prev) => prev || locsData[0]);
+      }
+      if (suppliesData.length > 0) setSupplies(suppliesData);
+      if (geoData) setGeoJson(geoData);
+      if (risksData.length > 0) setRisks(risksData);
+      if (fcData.length > 0) setForecasts(fcData);
+      if (alertsData.length > 0) setAlerts(alertsData);
+      if (recsData.length > 0) setRecommendations(recsData);
+      if (vehData.length > 0) setVehicles(vehData);
+      if (shipData.length > 0) setShipments(shipData);
+    } catch (err) {
+      console.error('Error loading initial SupplyFlow data:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const systemStatus = health ? health.status : 'offline';
+  useEffect(() => {
+    loadAllData();
+  }, [loadAllData]);
+
+  const handleTriggerOptimization = async () => {
+    setIsOptimizing(true);
+    try {
+      const result = await triggerOptimization({ max_solve_time_seconds: 10 });
+      if (result) {
+        // Refresh recommendations and shipments
+        const [recs, ships] = await Promise.all([
+          fetchRecommendations(),
+          fetchShipments(),
+        ]);
+        setRecommendations(recs);
+        setShipments(ships);
+      }
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+  const handleRetrainForecasts = async () => {
+    setIsForecasting(true);
+    try {
+      const res = await triggerForecastTraining();
+      if (res && res.metrics) {
+        setForecastMetrics(res.metrics);
+        const fc = await fetchForecasts();
+        setForecasts(fc);
+      }
+    } finally {
+      setIsForecasting(false);
+    }
+  };
+
+  const handleCalculateRoute = async (originId: string, destId: string) => {
+    setIsRouting(true);
+    try {
+      const plan = await fetchRoutePlan(originId, destId);
+      if (plan) {
+        setRoutePlan(plan);
+      }
+    } finally {
+      setIsRouting(false);
+    }
+  };
+
+  const handleRunSimulation = async (scenarioType: string) => {
+    setIsSimulating(true);
+    try {
+      const res = await runSimulation(scenarioType);
+      if (res) {
+        setSimulationResult(res);
+      }
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
+  const tabs = [
+    { id: 'overview', label: 'Operations Overview', icon: Activity },
+    { id: 'gis', label: 'Tactical GIS Map', icon: MapIcon },
+    { id: 'inventory', label: 'Inventory & DoS Risk', icon: Shield },
+    { id: 'forecasting', label: 'Demand Forecasting', icon: BarChart2 },
+    { id: 'routing', label: 'Route Corridors', icon: Navigation },
+    { id: 'shipments', label: 'Convoy Manifests', icon: Truck },
+    { id: 'recommendations', label: 'Recommendations', icon: FileText },
+    { id: 'simulation', label: 'What-If Simulation', icon: Zap },
+  ];
 
   return (
-    <div className="flex-1 flex flex-col">
-      <Header systemStatus={systemStatus} />
+    <div className="flex-1 flex flex-col min-h-screen">
+      <Header systemStatus={health ? health.status : 'offline'} />
 
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
-        {/* Phase 1 Status Banner */}
-        <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-mono px-2 py-0.5 rounded bg-accent-primary/20 text-accent-primary border border-accent-primary/30">
-                PHASE 1 ACTIVE
-              </span>
-              <h2 className="text-base font-semibold text-tactical-100">
-                Development Foundation & Services Operational
-              </h2>
-            </div>
-            <p className="text-xs text-tactical-400">
-              Next.js 15 frontend and FastAPI backend communicating successfully. PostGIS relational spatial schema ready.
-            </p>
+      <main className="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+        {/* Navigation Tabs Bar */}
+        <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-1.5 flex items-center justify-between overflow-x-auto shadow-sm">
+          <div className="flex items-center space-x-1 min-w-max">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center space-x-2 px-3 py-2 rounded text-xs font-mono font-medium transition-all ${
+                    isActive
+                      ? 'bg-accent-primary text-white shadow-sm'
+                      : 'text-tactical-400 hover:text-tactical-200 hover:bg-tactical-800/60'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex items-center space-x-3">
-            <span className="text-[11px] font-mono text-tactical-400">
-              Last probe: {lastChecked || 'Checking...'}
-            </span>
-            <button
-              onClick={checkStatus}
-              disabled={loading}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded bg-tactical-800 hover:bg-tactical-700 text-tactical-200 border border-tactical-700 text-xs font-mono transition-colors"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
-          </div>
+          <button
+            onClick={loadAllData}
+            disabled={loading}
+            title="Refresh All Telemetry"
+            className="p-2 rounded text-tactical-400 hover:text-tactical-100 hover:bg-tactical-800 transition-colors ml-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
 
-        {/* Connectivity Diagnostics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {/* Backend API Card */}
-          <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2 text-tactical-200 text-xs font-semibold">
-                <Server className="w-4 h-4 text-accent-primary" />
-                <span>FastAPI Gateway</span>
-              </div>
-              {health ? (
-                <span className="flex items-center space-x-1 text-[11px] text-accent-success font-mono">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>ONLINE</span>
-                </span>
-              ) : (
-                <span className="flex items-center space-x-1 text-[11px] text-accent-danger font-mono">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span>OFFLINE</span>
-                </span>
-              )}
-            </div>
+        {/* Tab Content Render */}
+        <div className="space-y-6">
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              <OverviewTab
+                locations={locations}
+                risks={risks}
+                alerts={alerts}
+                vehicles={vehicles}
+                shipments={shipments}
+                recommendations={recommendations}
+                onTriggerOptimization={handleTriggerOptimization}
+                onRetrainForecast={handleRetrainForecasts}
+                onNavigateTab={(tab) => setActiveTab(tab)}
+                isOptimizing={isOptimizing}
+                isForecasting={isForecasting}
+              />
 
-            <div className="text-xs font-mono space-y-1 text-tactical-400 border-t border-tactical-800 pt-3">
-              <div className="flex justify-between">
-                <span>Endpoint:</span>
-                <span className="text-tactical-200">http://localhost:8000</span>
-              </div>
-              <div className="flex justify-between">
-                <span>API Version:</span>
-                <span className="text-tactical-200">{health?.version || '0.1.0'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Environment:</span>
-                <span className="text-tactical-200 uppercase">{health?.environment || 'development'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Data Isolation:</span>
-                <span className="text-accent-success font-semibold">SYNTHETIC ONLY</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Database & PostGIS Card */}
-          <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2 text-tactical-200 text-xs font-semibold">
-                <Database className="w-4 h-4 text-accent-primary" />
-                <span>PostgreSQL + PostGIS</span>
-              </div>
-              {health?.database.connected ? (
-                <span className="flex items-center space-x-1 text-[11px] text-accent-success font-mono">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>CONNECTED</span>
-                </span>
-              ) : (
-                <span className="flex items-center space-x-1 text-[11px] text-accent-warning font-mono">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span>PENDING DB</span>
-                </span>
-              )}
-            </div>
-
-            <div className="text-xs font-mono space-y-1 text-tactical-400 border-t border-tactical-800 pt-3">
-              <div className="flex justify-between">
-                <span>Server:</span>
-                <span className="text-tactical-200">PostgreSQL 16/18</span>
-              </div>
-              <div className="flex justify-between">
-                <span>PostGIS Extension:</span>
-                <span className={health?.database.postgis_installed ? 'text-accent-success' : 'text-tactical-400'}>
-                  {health?.database.postgis_installed ? `Installed (v${health.database.postgis_version})` : 'Configured (Docker)'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span>Database:</span>
-                <span className="text-tactical-200">supplyflow</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Connection Pool:</span>
-                <span className="text-tactical-200">SQLAlchemy Async</span>
+              {/* Embedded Map Section in Overview */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <MapIcon className="w-4 h-4 text-accent-primary" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-tactical-100 font-mono">
+                      Demonstration Logistics Theater — Spatial Corridor Network
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('gis')}
+                    className="text-xs font-mono text-accent-primary hover:underline"
+                  >
+                    Open Full Map &rarr;
+                  </button>
+                </div>
+                <TacticalMapViewer
+                  geoJson={geoJson}
+                  locations={locations}
+                  selectedNode={selectedNode}
+                  onSelectNode={(node) => setSelectedNode(node)}
+                  routePlan={routePlan}
+                  activeScenario={simulationResult?.scenario_requested}
+                />
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Configurable Parameters Card */}
-          <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2 text-tactical-200 text-xs font-semibold">
-                <Settings className="w-4 h-4 text-accent-primary" />
-                <span>Simulation Parameters</span>
-              </div>
-              <span className="text-[11px] text-tactical-400 font-mono">EXTERNALIZED</span>
-            </div>
-
-            <div className="text-xs font-mono space-y-1 text-tactical-400 border-t border-tactical-800 pt-3">
-              <div className="flex justify-between">
-                <span>Critical DoS Threshold:</span>
-                <span className="text-accent-warning">{health?.configuration.dos_critical_threshold_days ?? 2.0} Days</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Warning DoS Threshold:</span>
-                <span className="text-tactical-200">{health?.configuration.dos_warning_threshold_days ?? 5.0} Days</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Convoy Transit Window:</span>
-                <span className="text-tactical-200">{health?.configuration.convoy_daylight_start_hour ?? 6}:00 - {health?.configuration.convoy_daylight_end_hour ?? 17}:00 hrs</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Passable Snow Rate:</span>
-                <span className="text-tactical-200">&lt; {health?.configuration.max_road_passable_snow_cm_hr ?? 15.0} cm/hr</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Engineering Roadmap Module Matrix */}
-        <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Layers className="w-4 h-4 text-accent-primary" />
-              <h3 className="text-xs font-bold tracking-wide uppercase text-tactical-200 font-mono">
-                System Development Pipeline Status
-              </h3>
-            </div>
-            <span className="text-xs text-tactical-400 font-mono">14-Phase Phased Architecture</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-            <div className="p-3 bg-tactical-950 border border-accent-success/30 rounded flex flex-col justify-between space-y-2">
+          {activeTab === 'gis' && (
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="font-mono font-semibold text-accent-success">PHASE 0</span>
-                <span className="text-[10px] bg-accent-success/20 text-accent-success px-1.5 py-0.5 rounded font-mono">APPROVED</span>
+                <div>
+                  <h2 className="text-base font-bold text-tactical-100 font-mono">
+                    High-Altitude GIS Logistics Network Viewer
+                  </h2>
+                  <p className="text-xs text-tactical-400">
+                    MapLibre &amp; Tactical Vector rendering of 14 logistics nodes and 18 high-altitude corridors.
+                  </p>
+                </div>
               </div>
-              <div className="text-tactical-200 font-medium">Requirements & Blueprint</div>
-              <p className="text-[11px] text-tactical-400">Architecture, Free Data Sources, ER Models</p>
+              <TacticalMapViewer
+                geoJson={geoJson}
+                locations={locations}
+                selectedNode={selectedNode}
+                onSelectNode={(node) => setSelectedNode(node)}
+                routePlan={routePlan}
+                activeScenario={simulationResult?.scenario_requested}
+              />
             </div>
+          )}
 
-            <div className="p-3 bg-tactical-950 border border-accent-primary/40 rounded flex flex-col justify-between space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono font-semibold text-accent-primary">PHASE 1</span>
-                <span className="text-[10px] bg-accent-primary/20 text-accent-primary px-1.5 py-0.5 rounded font-mono">READY</span>
-              </div>
-              <div className="text-tactical-200 font-medium">Infrastructure Skeleton</div>
-              <p className="text-[11px] text-tactical-400">FastAPI, Next.js, Docker Compose, DB Session</p>
-            </div>
+          {activeTab === 'inventory' && <InventoryRiskTab risks={risks} />}
 
-            <div className="p-3 bg-tactical-950 border border-tactical-800 rounded flex flex-col justify-between space-y-2 opacity-75">
-              <div className="flex items-center justify-between">
-                <span className="font-mono font-semibold text-tactical-400">PHASE 2</span>
-                <span className="text-[10px] bg-tactical-800 text-tactical-400 px-1.5 py-0.5 rounded font-mono">NEXT</span>
-              </div>
-              <div className="text-tactical-200 font-medium">PostGIS & Synthetic Data</div>
-              <p className="text-[11px] text-tactical-400">Relational spatial schema & generator</p>
-            </div>
+          {activeTab === 'forecasting' && (
+            <ForecastingTab
+              forecasts={forecasts}
+              locations={locations}
+              supplies={supplies}
+              onRetrainForecast={handleRetrainForecasts}
+              isRetraining={isForecasting}
+              metrics={forecastMetrics}
+            />
+          )}
 
-            <div className="p-3 bg-tactical-950 border border-tactical-800 rounded flex flex-col justify-between space-y-2 opacity-50">
-              <div className="flex items-center justify-between">
-                <span className="font-mono font-semibold text-tactical-500">PHASES 3–14</span>
-                <span className="text-[10px] bg-tactical-800 text-tactical-500 px-1.5 py-0.5 rounded font-mono">QUEUED</span>
-              </div>
-              <div className="text-tactical-300 font-medium">Core Mathematical Engines</div>
-              <p className="text-[11px] text-tactical-500">ML, Risk, GIS, OR-Tools, What-If UI</p>
+          {activeTab === 'routing' && (
+            <div className="space-y-6">
+              <RouteCorridorTab
+                locations={locations}
+                onCalculateRoute={handleCalculateRoute}
+                routePlan={routePlan}
+                isCalculating={isRouting}
+              />
+              <TacticalMapViewer
+                geoJson={geoJson}
+                locations={locations}
+                selectedNode={selectedNode}
+                onSelectNode={(node) => setSelectedNode(node)}
+                routePlan={routePlan}
+                activeScenario={simulationResult?.scenario_requested}
+              />
             </div>
-          </div>
+          )}
+
+          {activeTab === 'shipments' && (
+            <ShipmentsTab shipments={shipments} vehicles={vehicles} />
+          )}
+
+          {activeTab === 'recommendations' && (
+            <RecommendationsTab
+              recommendations={recommendations}
+              onTriggerOptimization={handleTriggerOptimization}
+              isOptimizing={isOptimizing}
+            />
+          )}
+
+          {activeTab === 'simulation' && (
+            <div className="space-y-6">
+              <SimulationTab
+                onRunSimulation={handleRunSimulation}
+                simulationResult={simulationResult}
+                isRunning={isSimulating}
+              />
+              <TacticalMapViewer
+                geoJson={geoJson}
+                locations={locations}
+                selectedNode={selectedNode}
+                onSelectNode={(node) => setSelectedNode(node)}
+                routePlan={routePlan}
+                activeScenario={simulationResult?.scenario_requested}
+              />
+            </div>
+          )}
         </div>
       </main>
 
       <footer className="w-full bg-tactical-950 border-t border-tactical-800 px-6 py-3 text-xs text-tactical-500 flex items-center justify-between">
-        <div>SupplyFlow Decision Support • Smart India Hackathon 2026</div>
+        <div>SupplyFlow Decision Support • Smart India Hackathon 2026 • PS 26251</div>
         <div className="font-mono text-[11px]">Strictly Synthetic / Simulation Data</div>
       </footer>
     </div>

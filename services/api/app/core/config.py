@@ -55,13 +55,18 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/supplyflow"
     SYNC_DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/supplyflow"
 
-    # Configurable operational parameters (never hard-coded in logic)
+    # Configurable operational demonstration parameters (never hard-coded in logic)
     DEFAULT_DOS_CRITICAL_THRESHOLD_DAYS: float = 2.0
     DEFAULT_DOS_WARNING_THRESHOLD_DAYS: float = 5.0
     CONVOY_DAYLIGHT_START_HOUR: int = 6
     CONVOY_DAYLIGHT_END_HOUR: int = 17
     MAX_ROAD_PASSABLE_SNOW_CM_HR: float = 15.0
     DEFAULT_SOLVER_TIME_LIMIT_SECONDS: float = 5.0
+    SIMULATION_SEVERE_WEATHER_FRICTION_FACTOR: float = 1.85
+    SIMULATION_DEMAND_SURGE_MULTIPLIER: float = 2.5
+    RISK_WEIGHT_DOS: float = 0.45
+    RISK_WEIGHT_CRITICAL_ITEM: float = 0.30
+    RISK_WEIGHT_ELEVATION: float = 0.25
 
 
 settings = Settings()
