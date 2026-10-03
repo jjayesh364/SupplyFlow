@@ -1,14 +1,18 @@
 """Application configuration module for SupplyFlow."""
 
+from pathlib import Path
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ROOT_DIR = Path(__file__).resolve().parents[4]
 
 
 class Settings(BaseSettings):
     """Central configuration for SupplyFlow services."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(ROOT_DIR / ".env"), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

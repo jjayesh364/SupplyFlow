@@ -33,7 +33,7 @@ sync_engine = create_engine(
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     """Dependency that provides an async database session per request."""
     async with AsyncSessionLocal() as session:
         try:
@@ -55,9 +55,7 @@ async def check_database_connection() -> dict[str, Any]:
 
             # Check for PostGIS extension
             postgis_check = await conn.execute(
-                text(
-                    "SELECT default_version, installed_version FROM pg_available_extensions WHERE name = 'postgis';"
-                )
+                text("SELECT default_version, installed_version FROM pg_available_extensions WHERE name = 'postgis';")
             )
             postgis_row = postgis_check.first()
             postgis_installed = bool(postgis_row and postgis_row[1] is not None)
@@ -70,7 +68,7 @@ async def check_database_connection() -> dict[str, Any]:
                 "postgis_version": postgis_version,
                 "error": None,
             }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {
             "connected": False,
             "scalar_test": False,
