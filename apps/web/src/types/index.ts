@@ -58,21 +58,28 @@ export interface InventoryRiskItem {
   location_code: string;
   location_name: string;
   location_type: string;
-  elevation_m: number;
+  elevation_m?: number | null;
   item_id: string;
-  item_code: string;
+  item_code?: string;
+  sku?: string;
   item_name: string;
   category: string;
   is_critical: boolean;
   current_quantity: number;
   safety_stock: number;
-  daily_demand_rate: number;
+  max_capacity?: number;
+  demand_rate?: number | null;
+  daily_demand_rate?: number | null;
+  daily_demand_p50?: number | null;
   days_of_supply: number;
+  safety_deficit?: number | null;
+  safety_stock_deficit?: number | null;
   projected_stockout_date: string | null;
-  risk_state: 'HEALTHY' | 'WARNING' | 'CRITICAL';
-  safety_deficit: number;
+  safety_stock_breach?: boolean;
+  risk_state: 'CRITICAL' | 'WARNING' | 'ADEQUATE' | 'HEALTHY' | 'EXCESS' | string;
   urgency_score: number;
-  recommendation: string;
+  recommendation?: string;
+  explainability?: string[];
 }
 
 export interface DemandForecastItem {
@@ -184,12 +191,14 @@ export interface RecommendationItem {
 
 export interface VehicleItem {
   id: string;
-  registration_number: string;
+  vehicle_code?: string;
+  registration_number?: string;
   vehicle_type: string;
   payload_capacity_kg: number;
   volume_capacity_m3: number;
-  fuel_capacity_liters: number;
-  operational_status: string;
+  fuel_capacity_liters?: number;
+  status?: string;
+  operational_status?: string;
   is_active: boolean;
 }
 

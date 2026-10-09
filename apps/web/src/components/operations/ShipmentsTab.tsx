@@ -38,10 +38,10 @@ export const ShipmentsTab: React.FC<ShipmentsTabProps> = ({ shipments, vehicles 
             <div key={i} className="p-3 bg-tactical-950 border border-tactical-800 rounded space-y-1">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-xs font-bold text-tactical-100">
-                  {veh.registration_number}
+                  {veh.vehicle_code || veh.registration_number || 'VEH'}
                 </span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-accent-success/20 text-accent-success">
-                  {veh.operational_status}
+                  {veh.status || veh.operational_status || 'AVAILABLE'}
                 </span>
               </div>
               <div className="text-[11px] font-mono text-tactical-400">{veh.vehicle_type}</div>

@@ -28,6 +28,7 @@ class ItemRiskAssessment:
     location_code: str
     location_name: str
     location_type: str
+    elevation_m: float
     item_id: UUID
     sku: str
     item_name: str
@@ -143,6 +144,7 @@ class InventoryRiskService:
                     location_code=loc.code,
                     location_name=loc.name,
                     location_type=loc.location_type,
+                    elevation_m=float(loc.elevation_m or 0.0),
                     item_id=item.id,
                     sku=item.sku,
                     item_name=item.name,

@@ -41,6 +41,7 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
   const [viewMode, setViewMode] = useState<'TACTICAL_SVG' | 'MAPLIBRE'>('TACTICAL_SVG');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [hoveredNode, setHoveredNode] = useState<any | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapLibreInstanceRef = useRef<any>(null);
 
@@ -73,6 +74,11 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
       if (!isMounted || !mapContainerRef.current) return;
 
       try {
+        // Point MapLibre to local self-hosted bundled worker to avoid Webpack blob/import.meta chunk 404s
+        if (typeof (maplibregl as any).setWorkerUrl === 'function') {
+          (maplibregl as any).setWorkerUrl('/maplibre/maplibre-gl-worker.mjs');
+        }
+
         const MapClass = (maplibregl as any).Map || maplibregl.Map;
         const NavControlClass = (maplibregl as any).NavigationControl || maplibregl.NavigationControl;
 
@@ -100,6 +106,16 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
           },
           center: [77.0, 33.8],
           zoom: 6.8,
+        });
+
+        // Graceful error listener to prevent uncaught runtime overlays
+        map.on('error', (e: any) => {
+          const errMsg = e?.error?.message || String(e?.message || '');
+          console.warn('MapLibre GL non-fatal notice:', errMsg);
+          if (errMsg.includes('Worker failed to load')) {
+            setMapError('Spatial GL Worker unavailable; operating in Tactical Vector Mesh mode.');
+            setViewMode('TACTICAL_SVG');
+          }
         });
 
         map.addControl(new NavControlClass(), 'top-right');
@@ -140,6 +156,7 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
         });
       } catch (err) {
         console.warn('MapLibre GL initialization fallback to Tactical SVG:', err);
+        setMapError('Spatial GL initialization fell back to Tactical Vector Mesh.');
         setViewMode('TACTICAL_SVG');
       }
     });
@@ -194,6 +211,14 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
           MapLibre Spatial GL
         </button>
       </div>
+
+      {/* Map Fallback Notice if triggered */}
+      {mapError && (
+        <div className="absolute top-12 left-3 z-20 flex items-center space-x-2 bg-accent-warning/20 border border-accent-warning/40 text-accent-warning px-3 py-1 rounded text-xs font-mono">
+          <span>{mapError}</span>
+          <button onClick={() => setMapError(null)} className="ml-2 hover:text-white font-bold">×</button>
+        </div>
+      )}
 
       {/* Disruption / Status Badge Overlay */}
       <div className="absolute top-3 right-3 z-20 flex items-center space-x-2">

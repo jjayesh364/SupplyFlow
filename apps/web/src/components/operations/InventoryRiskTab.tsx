@@ -7,13 +7,21 @@ import {
   AlertTriangle,
   ArrowUpDown,
   CheckCircle2,
-  Filter,
   Search,
-  Shield,
 } from 'lucide-react';
 
 interface InventoryRiskTabProps {
   risks: InventoryRiskItem[];
+}
+
+function formatNumber(val: number | null | undefined, digits = 1, fallback = '—'): string {
+  if (val == null || isNaN(val) || !isFinite(val)) return fallback;
+  return val.toFixed(digits);
+}
+
+function formatLocale(val: number | null | undefined, fallback = '—'): string {
+  if (val == null || isNaN(val) || !isFinite(val)) return fallback;
+  return val.toLocaleString();
 }
 
 export const InventoryRiskTab: React.FC<InventoryRiskTabProps> = ({ risks }) => {
@@ -23,29 +31,50 @@ export const InventoryRiskTab: React.FC<InventoryRiskTabProps> = ({ risks }) => 
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [sortBy, setSortBy] = useState<'urgency' | 'dos' | 'node'>('urgency');
 
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    risks.forEach((r) => {
+      if (r.category) cats.add(r.category);
+    });
+    return Array.from(cats).sort();
+  }, [risks]);
+
   const filteredRisks = useMemo(() => {
     return risks
       .filter((r) => {
         if (typeFilter !== 'ALL' && r.location_type !== typeFilter) return false;
-        if (riskFilter !== 'ALL' && r.risk_state !== riskFilter) return false;
+        if (riskFilter !== 'ALL') {
+          if (riskFilter === 'CRITICAL' && r.risk_state !== 'CRITICAL') return false;
+          if (riskFilter === 'WARNING' && r.risk_state !== 'WARNING') return false;
+          if (
+            riskFilter === 'HEALTHY' &&
+            r.risk_state !== 'HEALTHY' &&
+            r.risk_state !== 'ADEQUATE' &&
+            r.risk_state !== 'EXCESS'
+          ) {
+            return false;
+          }
+        }
         if (categoryFilter !== 'ALL' && r.category !== categoryFilter) return false;
         if (searchTerm) {
-          const matchNode = r.location_code.toLowerCase().includes(searchTerm.toLowerCase());
-          const matchItem = r.item_name.toLowerCase().includes(searchTerm.toLowerCase());
+          const matchNode = (r.location_code || '').toLowerCase().includes(searchTerm.toLowerCase());
+          const matchItem = (r.item_name || '').toLowerCase().includes(searchTerm.toLowerCase());
           return matchNode || matchItem;
         }
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === 'urgency') return b.urgency_score - a.urgency_score;
-        if (sortBy === 'dos') return a.days_of_supply - b.days_of_supply;
-        return a.location_code.localeCompare(b.location_code);
+        if (sortBy === 'urgency') return (b.urgency_score ?? 0) - (a.urgency_score ?? 0);
+        if (sortBy === 'dos') return (a.days_of_supply ?? 0) - (b.days_of_supply ?? 0);
+        return (a.location_code || '').localeCompare(b.location_code || '');
       });
   }, [risks, typeFilter, riskFilter, categoryFilter, searchTerm, sortBy]);
 
   const criticalCount = risks.filter((r) => r.risk_state === 'CRITICAL').length;
   const warningCount = risks.filter((r) => r.risk_state === 'WARNING').length;
-  const healthyCount = risks.filter((r) => r.risk_state === 'HEALTHY').length;
+  const healthyCount = risks.filter(
+    (r) => r.risk_state === 'HEALTHY' || r.risk_state === 'ADEQUATE' || r.risk_state === 'EXCESS'
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -103,7 +132,7 @@ export const InventoryRiskTab: React.FC<InventoryRiskTabProps> = ({ risks }) => 
             <option value="ALL">All Risk States</option>
             <option value="CRITICAL">Critical Only</option>
             <option value="WARNING">Warning Only</option>
-            <option value="HEALTHY">Healthy Only</option>
+            <option value="HEALTHY">Healthy / Stable Only</option>
           </select>
 
           {/* Node Type Filter */}
@@ -125,10 +154,11 @@ export const InventoryRiskTab: React.FC<InventoryRiskTabProps> = ({ risks }) => 
             className="bg-tactical-950 border border-tactical-800 rounded px-2.5 py-1.5 text-xs font-mono text-tactical-300 focus:outline-none focus:border-accent-primary"
           >
             <option value="ALL">All Supply Classes</option>
-            <option value="CLASS_I_RATIONS">Class I: Rations</option>
-            <option value="CLASS_III_POL">Class III: POL / Fuel</option>
-            <option value="CLASS_V_AMMUNITION">Class V: Ammo</option>
-            <option value="CLASS_VIII_MEDICAL">Class VIII: Medical</option>
+            {availableCategories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat.replace('CLASS_', 'CL-')}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -174,55 +204,67 @@ export const InventoryRiskTab: React.FC<InventoryRiskTabProps> = ({ risks }) => 
             </thead>
             <tbody className="divide-y divide-tactical-800 text-tactical-200">
               {filteredRisks.map((risk, idx) => {
-                const dosPercent = Math.min(100, (risk.days_of_supply / 10) * 100);
+                const demand = risk.demand_rate ?? risk.daily_demand_rate ?? risk.daily_demand_p50;
+                const dosVal = risk.days_of_supply;
+                const dosPercent =
+                  dosVal != null && !isNaN(dosVal) ? Math.min(100, Math.max(0, (dosVal / 10) * 100)) : 0;
+                const urgency = risk.urgency_score ?? 0;
+                const isCritical = risk.risk_state === 'CRITICAL';
+                const isWarning = risk.risk_state === 'WARNING';
+                const statusLabel =
+                  risk.risk_state === 'ADEQUATE' ? 'HEALTHY' : risk.risk_state || 'ADEQUATE';
+
                 return (
                   <tr key={idx} className="hover:bg-tactical-800/40 transition-colors">
                     <td className="py-3 px-3">
-                      <div className="font-semibold text-tactical-100">{risk.location_code}</div>
+                      <div className="font-semibold text-tactical-100">{risk.location_code || '—'}</div>
                       <div className="text-[10px] text-tactical-400">
-                        {risk.location_type} • {risk.elevation_m}m
+                        {risk.location_type || 'NODE'} •{' '}
+                        {risk.elevation_m != null && !isNaN(risk.elevation_m)
+                          ? `${Math.round(risk.elevation_m)}m`
+                          : '—'}
                       </div>
                     </td>
                     <td className="py-3 px-3 text-tactical-400">
                       <span className="px-1.5 py-0.5 rounded bg-tactical-950 border border-tactical-800 text-[10px]">
-                        {risk.category.replace('CLASS_', 'CL-')}
+                        {(risk.category || '').replace('CLASS_', 'CL-') || '—'}
                       </span>
                     </td>
                     <td className="py-3 px-3">
-                      <div className="font-medium text-tactical-100">{risk.item_name}</div>
-                      <div className="text-[10px] text-tactical-500">{risk.item_code}</div>
+                      <div className="font-medium text-tactical-100">{risk.item_name || '—'}</div>
+                      <div className="text-[10px] text-tactical-500">{risk.item_code || risk.sku || '—'}</div>
                     </td>
                     <td className="py-3 px-3">
                       <span className="text-tactical-100 font-medium">
-                        {risk.current_quantity.toLocaleString()}
+                        {formatLocale(risk.current_quantity)}
                       </span>
                       <div className="text-[10px] text-tactical-500">
-                        Safe: {risk.safety_stock.toLocaleString()}
+                        Safe: {formatLocale(risk.safety_stock)}
                       </div>
                     </td>
                     <td className="py-3 px-3 text-tactical-300">
-                      {risk.daily_demand_rate.toFixed(1)}/day
+                      {demand != null && !isNaN(demand) ? `${formatNumber(demand, 1)}/day` : '—'}
                     </td>
                     <td className="py-3 px-3 w-40">
                       <div className="flex items-center justify-between text-[11px] mb-1">
                         <span
                           className={`font-bold ${
-                            risk.risk_state === 'CRITICAL'
+                            isCritical
                               ? 'text-accent-danger'
-                              : risk.risk_state === 'WARNING'
+                              : isWarning
                               ? 'text-accent-warning'
                               : 'text-accent-success'
                           }`}
                         >
-                          {risk.days_of_supply.toFixed(1)} days
+                          {dosVal != null && !isNaN(dosVal) ? `${formatNumber(dosVal, 1)} days` : '—'}
                         </span>
                       </div>
                       <div className="w-full bg-tactical-950 rounded-full h-1.5 overflow-hidden">
                         <div
                           className={`h-full rounded-full ${
-                            risk.risk_state === 'CRITICAL'
+                            isCritical
                               ? 'bg-accent-danger'
-                              : risk.risk_state === 'WARNING'
+                              : isWarning
                               ? 'bg-accent-warning'
                               : 'bg-accent-success'
                           }`}
@@ -242,27 +284,29 @@ export const InventoryRiskTab: React.FC<InventoryRiskTabProps> = ({ risks }) => 
                     <td className="py-3 px-3">
                       <span
                         className={`font-bold ${
-                          risk.urgency_score >= 80
+                          urgency >= 80
                             ? 'text-accent-danger'
-                            : risk.urgency_score >= 50
+                            : urgency >= 50
                             ? 'text-accent-warning'
                             : 'text-tactical-400'
                         }`}
                       >
-                        {risk.urgency_score}/100
+                        {risk.urgency_score != null && !isNaN(risk.urgency_score)
+                          ? `${Math.round(risk.urgency_score)}/100`
+                          : '—'}
                       </span>
                     </td>
                     <td className="py-3 px-3">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          risk.risk_state === 'CRITICAL'
+                          isCritical
                             ? 'bg-accent-danger/20 text-accent-danger border border-accent-danger/30'
-                            : risk.risk_state === 'WARNING'
+                            : isWarning
                             ? 'bg-accent-warning/20 text-accent-warning border border-accent-warning/30'
                             : 'bg-accent-success/20 text-accent-success border border-accent-success/30'
                         }`}
                       >
-                        {risk.risk_state}
+                        {statusLabel}
                       </span>
                     </td>
                   </tr>

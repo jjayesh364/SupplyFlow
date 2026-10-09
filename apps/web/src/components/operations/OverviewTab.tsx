@@ -60,7 +60,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const fsds = locations.filter((l) => l.location_type === 'FORWARD_SUPPLY_DEPOT').length;
   const forwardPosts = locations.filter((l) => l.location_type === 'FORWARD_POST').length;
 
-  const activeVehicles = vehicles.filter((v) => v.operational_status === 'AVAILABLE').length;
+  const activeVehicles = vehicles.filter(
+    (v) => (v.operational_status || v.status) === 'AVAILABLE'
+  ).length;
   const activeShipments = shipments.filter(
     (s) => s.status === 'IN_TRANSIT' || s.status === 'DISPATCHED'
   ).length;
@@ -134,7 +136,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             <Truck className="w-3.5 h-3.5 text-tactical-300" />
           </div>
           <div className="text-2xl font-mono font-bold text-tactical-100">
-            {activeVehicles}/{vehicles.length || 10}
+            {activeVehicles}/{vehicles.length || 18}
           </div>
           <div className="text-[11px] font-mono text-accent-success">
             All-Terrain Convoys Ready
@@ -278,24 +280,28 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               {criticalRisks.slice(0, 5).map((risk, i) => (
                 <tr key={i} className="hover:bg-tactical-800/40 transition-colors">
                   <td className="py-2.5 px-3 font-semibold text-tactical-100">
-                    {risk.location_code}
+                    {risk.location_code || '—'}
                   </td>
-                  <td className="py-2.5 px-3 text-tactical-400">{risk.location_type}</td>
+                  <td className="py-2.5 px-3 text-tactical-400">{risk.location_type || 'NODE'}</td>
                   <td className="py-2.5 px-3">
-                    <span className="text-tactical-200">{risk.item_name}</span>
-                    <span className="text-[10px] text-tactical-500 ml-1.5">({risk.category})</span>
+                    <span className="text-tactical-200">{risk.item_name || '—'}</span>
+                    <span className="text-[10px] text-tactical-500 ml-1.5">
+                      ({(risk.category || '').replace('CLASS_', 'CL-') || '—'})
+                    </span>
                   </td>
-                  <td className="py-2.5 px-3">{risk.current_quantity.toLocaleString()} units</td>
+                  <td className="py-2.5 px-3">
+                    {risk.current_quantity != null ? risk.current_quantity.toLocaleString() : '—'} units
+                  </td>
                   <td className="py-2.5 px-3">
                     <span className="px-2 py-0.5 rounded bg-accent-danger/20 text-accent-danger font-bold">
-                      {risk.days_of_supply}d
+                      {risk.days_of_supply != null ? `${risk.days_of_supply}d` : '—'}
                     </span>
                   </td>
                   <td className="py-2.5 px-3 font-bold text-accent-danger">
-                    {risk.urgency_score}/100
+                    {risk.urgency_score != null ? `${Math.round(risk.urgency_score)}/100` : '—'}
                   </td>
                   <td className="py-2.5 px-3 text-tactical-300 text-[11px]">
-                    {risk.recommendation}
+                    {risk.recommendation || risk.explainability?.[0] || 'Replenishment dispatch recommended'}
                   </td>
                 </tr>
               ))}

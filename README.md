@@ -138,7 +138,32 @@ SupplyFlow/
 
 ---
 
-## 3. Quickstart & Local Execution
+## Windows Quick Start
+
+The fastest way to start SupplyFlow:
+
+1. Double-click `start-windows.bat`
+2. Wait for the startup checks
+3. SupplyFlow opens automatically at:
+   **http://localhost:3000**
+
+Stopping:
+
+```text
+stop-windows.bat
+```
+
+Checking status:
+
+```text
+status-windows.bat
+```
+
+*(To also shut down the local PostgreSQL service: `stop-windows.bat --with-db`)*
+
+---
+
+## 3. Manual Quickstart & Local Execution
 
 ### Prerequisites
 - Python 3.12 or 3.13
