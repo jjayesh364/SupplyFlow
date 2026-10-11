@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.demo_safety import require_write_actions_enabled
 from app.db.session import get_db
 from app.models.alert import Alert
 from app.models.forecast import DemandForecast
@@ -24,6 +25,7 @@ router = APIRouter()
 )
 async def train_forecasts(
     horizon_days: int = Query(14, ge=1, le=60, description="Forward forecast horizon in days"),
+    _write_enabled: None = Depends(require_write_actions_enabled),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute model training and write forecasts to database."""

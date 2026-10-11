@@ -187,74 +187,78 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
   };
 
   return (
-    <div className="relative w-full h-[580px] bg-tactical-950 border border-tactical-800 rounded-lg overflow-hidden flex flex-col">
+    <div className="relative flex h-[420px] w-full flex-col overflow-hidden rounded-xl border border-tactical-800 bg-tactical-50 shadow-sm sm:h-[520px] lg:h-[580px]">
       {/* Top Map HUD Controls */}
-      <div className="absolute top-3 left-3 z-20 flex items-center space-x-2 bg-tactical-900/90 backdrop-blur border border-tactical-800 p-1.5 rounded text-xs">
+      <div className="absolute top-3 left-3 z-20 flex flex-wrap items-center gap-1 bg-white/95 backdrop-blur border border-tactical-800 p-1.5 rounded-lg text-xs shadow-sm">
         <button
+          type="button"
           onClick={() => setViewMode('TACTICAL_SVG')}
-          className={`px-2.5 py-1 rounded font-mono font-medium transition-colors ${
+          aria-pressed={viewMode === 'TACTICAL_SVG'}
+          className={`min-h-10 rounded-md px-3 py-2 text-xs font-semibold transition-colors ${
             viewMode === 'TACTICAL_SVG'
               ? 'bg-accent-primary text-white shadow'
               : 'text-tactical-400 hover:text-tactical-200'
           }`}
         >
-          Tactical Vector Mesh
+          Network schematic
         </button>
         <button
+          type="button"
           onClick={() => setViewMode('MAPLIBRE')}
-          className={`px-2.5 py-1 rounded font-mono font-medium transition-colors ${
+          aria-pressed={viewMode === 'MAPLIBRE'}
+          className={`min-h-10 rounded-md px-3 py-2 text-xs font-semibold transition-colors ${
             viewMode === 'MAPLIBRE'
               ? 'bg-accent-primary text-white shadow'
               : 'text-tactical-400 hover:text-tactical-200'
           }`}
         >
-          MapLibre Spatial GL
+          Street map
         </button>
       </div>
 
       {/* Map Fallback Notice if triggered */}
       {mapError && (
-        <div className="absolute top-12 left-3 z-20 flex items-center space-x-2 bg-accent-warning/20 border border-accent-warning/40 text-accent-warning px-3 py-1 rounded text-xs font-mono">
+          <div className="absolute top-24 left-3 z-20 flex items-center space-x-2 bg-amber-50 border border-amber-200 text-amber-800 px-3 py-1 rounded text-xs sm:top-14">
           <span>{mapError}</span>
           <button onClick={() => setMapError(null)} className="ml-2 hover:text-white font-bold">×</button>
         </div>
       )}
 
       {/* Disruption / Status Badge Overlay */}
-      <div className="absolute top-3 right-3 z-20 flex items-center space-x-2">
+      <div className="absolute top-16 right-3 z-20 flex items-center space-x-2 sm:top-3">
         {activeScenario && activeScenario !== 'NORMAL' && (
-          <div className="flex items-center space-x-1.5 bg-accent-danger/20 border border-accent-danger/40 text-accent-danger px-2.5 py-1 rounded text-xs font-mono animate-pulse">
+          <div className="flex items-center space-x-1.5 bg-red-50 border border-red-200 text-red-800 px-2.5 py-1 rounded text-xs">
             <Zap className="w-3.5 h-3.5" />
             <span>DISRUPTION ACTIVE: {activeScenario}</span>
           </div>
         )}
-        <div className="bg-tactical-900/90 backdrop-blur border border-tactical-800 px-2.5 py-1 rounded text-xs font-mono text-tactical-300">
-          THEATER: HIMALAYAN HIGH-ALTITUDE
+        <div className="bg-white/95 backdrop-blur border border-tactical-800 px-2.5 py-1 rounded text-xs text-tactical-300 shadow-sm">
+          SYNTHETIC NETWORK
         </div>
       </div>
 
       {/* Main Map Canvas Area */}
       {viewMode === 'TACTICAL_SVG' ? (
-        <div className="relative w-full h-full flex-1 overflow-hidden bg-tactical-950 select-none">
+        <div className="relative w-full h-full flex-1 overflow-hidden bg-[#edf1f2] select-none">
           {/* Tactical Background Grid */}
           <svg className="w-full h-full" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet">
             <defs>
               <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="0.5" />
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#dce4e6" strokeWidth="0.7" />
               </pattern>
               <linearGradient id="routeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#38bdf8" />
-                <stop offset="100%" stopColor="#0284c7" />
+                <stop offset="0%" stopColor="#285ea8" />
+                <stop offset="100%" stopColor="#39765b" />
               </linearGradient>
             </defs>
 
             <rect width="1000" height="600" fill="url(#grid)" />
 
             {/* Elevation Contour Rings (Stylized Mountain Topography) */}
-            <circle cx="750" cy="180" r="140" fill="none" stroke="#334155" strokeWidth="0.5" strokeDasharray="3 3" />
-            <circle cx="750" cy="180" r="90" fill="none" stroke="#334155" strokeWidth="0.5" strokeDasharray="3 3" />
-            <circle cx="480" cy="310" r="120" fill="none" stroke="#334155" strokeWidth="0.5" strokeDasharray="3 3" />
-            <text x="760" y="70" fill="#475569" fontSize="10" fontFamily="monospace">
+            <circle cx="750" cy="180" r="140" fill="none" stroke="#cbd5d8" strokeWidth="1" strokeDasharray="3 4" />
+            <circle cx="750" cy="180" r="90" fill="none" stroke="#cbd5d8" strokeWidth="1" strokeDasharray="3 4" />
+            <circle cx="480" cy="310" r="120" fill="none" stroke="#cbd5d8" strokeWidth="1" strokeDasharray="3 4" />
+            <text x="760" y="70" fill="#687b89" fontSize="10" fontFamily="monospace">
               ZONE NORTH (ELEV &gt; 4,500m)
             </text>
             <text x="180" y="520" fill="#475569" fontSize="10" fontFamily="monospace">
@@ -271,17 +275,17 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
               const inPlannedRoute = isCorridorInRoutePlan(props.origin_code, props.destination_code);
               const friction = props.weather_friction_multiplier || 1.0;
 
-              let strokeColor = '#334155'; // standard road
+              let strokeColor = '#82949b'; // standard corridor
               let strokeWidth = 2.5;
 
               if (inPlannedRoute) {
-                strokeColor = '#38bdf8'; // glowing cyan
+                strokeColor = '#285ea8';
                 strokeWidth = 4.5;
               } else if (isBlocked) {
-                strokeColor = '#ef4444'; // blocked red
+                strokeColor = '#b83d3d';
                 strokeWidth = 3.5;
               } else if (friction >= 1.3) {
-                strokeColor = '#f59e0b'; // high friction amber
+                strokeColor = '#a86d0a';
                 strokeWidth = 3;
               }
 
@@ -302,7 +306,7 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
                     cx={(p1.x + p2.x) / 2}
                     cy={(p1.y + p2.y) / 2}
                     r={3}
-                    fill={isBlocked ? '#ef4444' : inPlannedRoute ? '#38bdf8' : '#475569'}
+                    fill={isBlocked ? '#b83d3d' : inPlannedRoute ? '#285ea8' : '#687b89'}
                   />
                 </g>
               );
@@ -329,10 +333,21 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
                 <g
                   key={`node-${i}`}
                   className="cursor-pointer group"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${props.code}, ${props.name}, ${props.location_type.replaceAll('_', ' ').toLowerCase()}`}
+                  aria-pressed={isSelected}
                   onClick={() => onSelectNode(locObj as LocationNode)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelectNode(locObj as LocationNode);
+                    }
+                  }}
                   onMouseEnter={() => setHoveredNode(props)}
                   onMouseLeave={() => setHoveredNode(null)}
                 >
+                  <circle cx={p.x} cy={p.y} r={18} fill="transparent" aria-hidden="true" />
                   {/* Selection Ring */}
                   {isSelected && (
                     <circle
@@ -380,20 +395,28 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
                   <text
                     x={p.x + 10}
                     y={p.y + 4}
-                    fill={isSelected ? '#38bdf8' : '#e2e8f0'}
+                    fill={isSelected ? '#174f8c' : '#18334a'}
                     fontSize="11"
                     fontFamily="monospace"
                     fontWeight="600"
-                    className="select-none pointer-events-none drop-shadow"
+                    stroke="#edf1f2"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    paintOrder="stroke"
+                    className="select-none pointer-events-none"
                   >
                     {props.code}
                   </text>
                   <text
                     x={p.x + 10}
                     y={p.y + 15}
-                    fill="#94a3b8"
+                    fill="#526571"
                     fontSize="9"
                     fontFamily="sans-serif"
+                    stroke="#edf1f2"
+                    strokeWidth="2.5"
+                    strokeLinejoin="round"
+                    paintOrder="stroke"
                     className="select-none pointer-events-none"
                   >
                     {props.elevation_m}m
@@ -408,19 +431,19 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
       )}
 
       {/* Floating Tactical Inspector Card (Bottom Left) */}
-      <div className="absolute bottom-3 left-3 z-20 bg-tactical-900/95 backdrop-blur border border-tactical-800 p-3 rounded-lg max-w-sm text-xs font-mono space-y-1.5 shadow-xl">
+      <div className="absolute bottom-3 left-3 z-20 max-w-[calc(100%-1.5rem)] space-y-1.5 rounded-xl border border-tactical-800 bg-white/95 p-3 text-xs shadow-lg backdrop-blur sm:max-w-sm">
         <div className="flex items-center justify-between border-b border-tactical-800 pb-1.5">
           <span className="font-bold text-tactical-200 flex items-center space-x-1.5">
             <MapPin className="w-3.5 h-3.5 text-accent-primary" />
             <span>{selectedNode ? selectedNode.code : 'SELECT A NODE'}</span>
           </span>
-          <span className="text-[10px] text-accent-primary uppercase px-1.5 py-0.5 rounded bg-accent-primary/10">
+          <span className="text-xs text-accent-primary uppercase px-1.5 py-0.5 rounded bg-accent-primary/10">
             {selectedNode ? selectedNode.location_type.replace('_', ' ') : 'STANDBY'}
           </span>
         </div>
 
         {selectedNode ? (
-          <div className="space-y-1 text-tactical-300 text-[11px]">
+          <div className="space-y-1.5 text-sm text-tactical-300">
             <div className="flex justify-between">
               <span className="text-tactical-500">Designation:</span>
               <span className="text-tactical-100">{selectedNode.name}</span>
@@ -437,14 +460,14 @@ export const TacticalMapViewer: React.FC<TacticalMapViewerProps> = ({
             </div>
           </div>
         ) : (
-          <p className="text-tactical-500 text-[11px]">
+          <p className="text-xs leading-5 text-tactical-500">
             Click on any logistics depot or forward post on the map to inspect elevation, corridors, and supply status.
           </p>
         )}
       </div>
 
       {/* Legend & Symbology (Bottom Right) */}
-      <div className="absolute bottom-3 right-3 z-20 bg-tactical-900/90 backdrop-blur border border-tactical-800 px-3 py-2 rounded text-[11px] font-mono space-y-1 text-tactical-400">
+      <div className="absolute bottom-44 right-3 z-20 hidden space-y-1 rounded-xl border border-tactical-800 bg-white/95 px-3 py-2 text-xs text-tactical-400 shadow-sm backdrop-blur sm:block lg:bottom-3">
         <div className="flex items-center space-x-2">
           <span className="w-2.5 h-2.5 bg-blue-500 rounded-sm" />
           <span>Base Depot (Rear)</span>

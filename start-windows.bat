@@ -1,3 +1,4 @@
+
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 title SupplyFlow Launcher
@@ -15,6 +16,7 @@ set "DB_HOST=localhost"
 set "DB_PORT=5433"
 set "DB_NAME=supplyflow"
 set "DB_USER=postgres"
+set "NPM_CMD=C:\Users\HP\AppData\Local\Author Software\nvm\installs\v22.23.3\npm.cmd"
 
 echo =============================================
 echo        SUPPLYFLOW -- DEVELOPMENT STARTUP
@@ -24,6 +26,7 @@ echo.
 
 :: [1/5] Checking environment
 echo [1/5] Checking environment...
+
 if not exist "%BACKEND%" (
     echo [ERROR] Backend directory not found: "%BACKEND%"
     pause
@@ -38,38 +41,42 @@ if not exist "%FRONTEND%" (
 
 if not exist "%VENV_PYTHON%" (
     echo [ERROR] Python virtual environment not found.
-    echo Expected:
-    echo   %VENV_PYTHON%
-    echo.
-    echo Please create the virtual environment before launching.
+    echo Expected: "%VENV_PYTHON%"
     pause
     exit /b 1
 )
+
 echo [OK] Python environment found:
 "%VENV_PYTHON%" --version
 
-where npm >nul 2>&1
-if not !errorlevel!==0 (
-    echo [ERROR] npm was not found on PATH.
-    echo Please install Node.js LTS and run this file again.
+if not exist "%NPM_CMD%" (
+    echo [ERROR] npm.cmd not found: "%NPM_CMD%"
+    pause
+    exit /b 1
+)
+
+call "%NPM_CMD%" --version
+if errorlevel 1 (
+    echo [ERROR] npm.cmd could not run.
     pause
     exit /b 1
 )
 
 where node >nul 2>&1
-if not !errorlevel!==0 (
+if errorlevel 1 (
     echo [ERROR] Node.js was not found on PATH.
-    echo Please install Node.js LTS and run this file again.
     pause
     exit /b 1
 )
-echo [OK] Node.js environment found
+
+echo [OK] Node.js and npm environment found
 
 :: [2/5] Checking PostgreSQL/PostGIS
 echo.
 echo [2/5] Checking PostgreSQL/PostGIS...
 
 set "DB_ONLINE=0"
+
 if exist "%PG_BIN%\pg_isready.exe" (
     "%PG_BIN%\pg_isready.exe" -h %DB_HOST% -p %DB_PORT% -U %DB_USER% -d %DB_NAME% >nul 2>&1
     if !errorlevel!==0 set "DB_ONLINE=1"
@@ -83,26 +90,32 @@ if "%DB_ONLINE%"=="1" (
     goto DB_DONE
 )
 
-echo Starting local PostgreSQL server on port %DB_PORT%...
+echo Starting PostgreSQL on port %DB_PORT%...
+
 if exist "%PG_BIN%\pg_ctl.exe" if exist "%PG_DATA%" (
     "%PG_BIN%\pg_ctl.exe" start -D "%PG_DATA%" -l "%PG_DATA%\logfile.log"
     goto DB_WAIT
 )
 
 where docker >nul 2>&1
-if %errorlevel%==0 (
-    echo Attempting to start PostgreSQL container via Docker Compose...
+if not errorlevel 1 (
+    echo Starting PostgreSQL using Docker Compose...
     docker compose up -d db
+    if errorlevel 1 (
+        echo [ERROR] Docker Compose failed to start the database.
+        pause
+        exit /b 1
+    )
     goto DB_WAIT
 )
 
 echo [ERROR] Could not start PostgreSQL.
-echo Neither local database in "%PG_DATA%" nor Docker Compose is available.
+echo Local database files or Docker Compose were not found.
 pause
 exit /b 1
 
 :DB_WAIT
-<nul set /p=Waiting for PostgreSQL to accept connections
+echo Waiting for PostgreSQL...
 set /a DB_ATTEMPTS=0
 set /a DB_MAX_ATTEMPTS=30
 
@@ -125,6 +138,14 @@ goto DB_WAIT_LOOP
 :DB_READY
 echo.
 echo [OK] PostgreSQL ready
+goto DB_DONE
+
+:DB_TIMEOUT
+echo.
+echo [ERROR] PostgreSQL did not become available within the timeout.
+echo Check the database logs and port %DB_PORT%.
+pause
+exit /b 1
 
 :DB_DONE
 
@@ -133,22 +154,22 @@ echo.
 echo [3/5] Starting FastAPI...
 
 curl.exe -s -f http://localhost:8000/api/v1/ping >nul 2>&1
-if %errorlevel%==0 (
+if not errorlevel 1 (
     echo [OK] Backend already running
     echo       http://localhost:8000
     goto BACKEND_DONE
 )
 
-echo Launching FastAPI backend in a new window...
+echo Launching FastAPI backend...
 start "SupplyFlow - Backend" cmd /k "cd /d ""%BACKEND%"" && ""%VENV_PYTHON%"" -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
-<nul set /p=Waiting for backend health check
+echo Waiting for backend health check...
 set /a BE_ATTEMPTS=0
 set /a BE_MAX_ATTEMPTS=35
 
 :BE_WAIT_LOOP
 curl.exe -s -f http://localhost:8000/api/v1/ping >nul 2>&1
-if !errorlevel!==0 goto BACKEND_READY_BANNER
+if not errorlevel 1 goto BACKEND_READY
 
 set /a BE_ATTEMPTS+=1
 if !BE_ATTEMPTS! geq !BE_MAX_ATTEMPTS! goto BE_TIMEOUT
@@ -157,20 +178,15 @@ if !BE_ATTEMPTS! geq !BE_MAX_ATTEMPTS! goto BE_TIMEOUT
 ping -n 2 127.0.0.1 >nul
 goto BE_WAIT_LOOP
 
-:BACKEND_READY_BANNER
+:BACKEND_READY
 echo.
-echo ========================================
-echo  SupplyFlow Backend
-echo ========================================
-echo  API: http://localhost:8000
-echo  Health: OK
-echo ========================================
+echo [OK] Backend ready: http://localhost:8000
 goto BACKEND_DONE
 
 :BE_TIMEOUT
 echo.
-echo [ERROR] FastAPI did not become healthy after 35 seconds.
-echo Please inspect the "SupplyFlow - Backend" terminal for error messages.
+echo [ERROR] FastAPI did not respond within 35 seconds.
+echo Inspect the SupplyFlow - Backend terminal.
 pause
 exit /b 1
 
@@ -181,22 +197,23 @@ echo.
 echo [4/5] Starting Next.js...
 
 curl.exe -s -f http://localhost:3000 >nul 2>&1
-if %errorlevel%==0 (
+if not errorlevel 1 (
     echo [OK] Frontend already running
     echo       http://localhost:3000
     goto FRONTEND_DONE
 )
 
-echo Launching Next.js development server in a new window...
-start "SupplyFlow - Frontend" cmd /k "cd /d ""%FRONTEND%"" && npm.cmd run dev"
+echo Launching Next.js frontend...
 
-<nul set /p=Waiting for Next.js to respond
+start "SupplyFlow - Frontend" powershell.exe -NoExit -Command "Set-Location -LiteralPath 'D:\SupplyFlow\apps\web'; & 'C:\Users\HP\AppData\Local\Author Software\nvm\installs\v22.23.3\npm.cmd' run dev"
+
+echo Waiting for Next.js...
 set /a FE_ATTEMPTS=0
 set /a FE_MAX_ATTEMPTS=45
 
 :FE_WAIT_LOOP
 curl.exe -s -f http://localhost:3000 >nul 2>&1
-if !errorlevel!==0 goto FE_READY
+if not errorlevel 1 goto FE_READY
 
 set /a FE_ATTEMPTS+=1
 if !FE_ATTEMPTS! geq !FE_MAX_ATTEMPTS! goto FE_TIMEOUT
@@ -207,14 +224,13 @@ goto FE_WAIT_LOOP
 
 :FE_READY
 echo.
-echo [OK] Frontend ready
-echo       http://localhost:3000
+echo [OK] Frontend ready: http://localhost:3000
 goto FRONTEND_DONE
 
 :FE_TIMEOUT
 echo.
-echo [ERROR] Next.js did not become available after 45 seconds.
-echo Please inspect the "SupplyFlow - Frontend" terminal for error messages.
+echo [ERROR] Next.js did not respond within 45 seconds.
+echo Inspect the SupplyFlow - Frontend PowerShell window.
 pause
 exit /b 1
 
@@ -230,17 +246,12 @@ echo =============================================
 echo  SUPPLYFLOW IS RUNNING
 echo =============================================
 echo.
-echo  Dashboard:
-echo    http://localhost:3000
+echo  Dashboard: http://localhost:3000
+echo  API:       http://localhost:8000
+echo  API Docs:  http://localhost:8000/docs
 echo.
-echo  API:
-echo    http://localhost:8000
-echo.
-echo  API Docs:
-echo    http://localhost:8000/docs
-echo.
-echo  Press Ctrl+C in individual service terminals to stop them,
-echo  or run stop-windows.bat to stop SupplyFlow development processes.
+echo  Stop individual services with Ctrl+C.
+echo  Or use stop-windows.bat if available.
 echo =============================================
 echo.
 pause

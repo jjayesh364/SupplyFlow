@@ -28,6 +28,7 @@ env/
 # Node / Next.js
 apps/web/node_modules/
 apps/web/.next/
+apps/web/.next-dev/
 apps/web/out/
 apps/web/build/
 .next/
@@ -68,3 +69,7 @@ htmlcov/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Keep the frontend API client visible to Git despite the generic Python lib/ ignore rule.
+!apps/web/src/lib/
+!apps/web/src/lib/api.ts

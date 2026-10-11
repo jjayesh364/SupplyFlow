@@ -161,6 +161,10 @@ status-windows.bat
 
 *(To also shut down the local PostgreSQL service: `stop-windows.bat --with-db`)*
 
+## AI Help and zero-cost demo hosting
+
+SupplyFlow includes an optional read-only AI explainer for synthetic demonstration data. Setup, privacy, free-tier limitations, Supabase PostGIS configuration, and Render service settings are documented in [AI and Render Demo Preparation](docs/AI_AND_RENDER_DEPLOYMENT.md). The Gemini key is optional and server-side only; the assistant stays unavailable when it is not configured.
+
 ---
 
 ## 3. Manual Quickstart & Local Execution

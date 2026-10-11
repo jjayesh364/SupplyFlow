@@ -12,23 +12,23 @@ const config: Config = {
         background: "var(--background)",
         foreground: "var(--foreground)",
         tactical: {
-          950: "#080c14",
-          900: "#0f172a",
-          800: "#1e293b",
-          700: "#334155",
-          600: "#475569",
-          500: "#64748b",
-          400: "#94a3b8",
-          300: "#cbd5e1",
-          200: "#e2e8f0",
-          100: "#f1f5f9",
-          50: "#f8fafc",
+          950: "#f5f6f2",
+          900: "#ffffff",
+          800: "#e3e8eb",
+          700: "#cbd5d8",
+          600: "#8495a0",
+          500: "#687b89",
+          400: "#526475",
+          300: "#3e5669",
+          200: "#29465d",
+          100: "#18334a",
+          50: "#edf1f2",
         },
         accent: {
-          primary: "#3b82f6", // Blue for nominal routes & planning
-          warning: "#f59e0b", // Amber for degraded routes & warning DoS
-          danger: "#ef4444",  // Red for blocked routes & critical DoS
-          success: "#10b981", // Green for healthy DoS
+          primary: "#285ea8",
+          warning: "#a86d0a",
+          danger: "#b83d3d",
+          success: "#39765b",
         },
       },
       fontFamily: {

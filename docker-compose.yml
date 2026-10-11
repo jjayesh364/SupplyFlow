@@ -60,12 +60,14 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/Dockerfile.web
+      args:
+        SUPPLYFLOW_API_ORIGIN: http://api:8000
     container_name: supplyflow-web
     restart: unless-stopped
     depends_on:
       - api
     environment:
-      NEXT_PUBLIC_API_URL: http://api:8000
+      SUPPLYFLOW_API_ORIGIN: http://api:8000
       NEXT_PUBLIC_DEMO_THEATER_LABEL: ${DEMO_THEATER_LABEL:-"DEMONSTRATION THEATER — SYNTHETIC LOGISTICS NETWORK"}
       NEXT_PUBLIC_IS_SYNTHETIC_DATA: "true"
     ports:

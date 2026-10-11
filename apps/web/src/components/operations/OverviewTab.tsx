@@ -1,37 +1,19 @@
 'use client';
 
 import React from 'react';
-import {
-  AlertItem,
-  InventoryRiskItem,
-  LocationNode,
-  OptimizationRunResult,
-  RecommendationItem,
-  ShipmentItemRecord,
-  VehicleItem,
-} from '@/types';
-import {
-  Activity,
-  AlertOctagon,
-  ArrowUpRight,
-  CheckCircle2,
-  Clock,
-  Layers,
-  MapPin,
-  Play,
-  RotateCcw,
-  Shield,
-  Truck,
-  Zap,
-} from 'lucide-react';
+import { InventoryRiskItem, LocationNode, RecommendationItem, ShipmentItemRecord, VehicleItem } from '@/types';
+import { AlertTriangle, ArrowUpRight, Clock, MapPin, Play, RotateCcw, Shield, Truck, Zap } from 'lucide-react';
+import { getRecommendationDetailRows, getRecommendationTitle } from '@/components/operations/operationDisplay';
 
 interface OverviewTabProps {
   locations: LocationNode[];
   risks: InventoryRiskItem[];
-  alerts: AlertItem[];
   vehicles: VehicleItem[];
   shipments: ShipmentItemRecord[];
   recommendations: RecommendationItem[];
+  recommendationsLoading: boolean;
+  recommendationsLoadError: boolean;
+  isDataLoading: boolean;
   onTriggerOptimization: () => void;
   onRetrainForecast: () => void;
   onNavigateTab: (tab: string) => void;
@@ -40,282 +22,78 @@ interface OverviewTabProps {
 }
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
-  locations,
-  risks,
-  alerts,
-  vehicles,
-  shipments,
-  recommendations,
-  onTriggerOptimization,
-  onRetrainForecast,
-  onNavigateTab,
-  isOptimizing,
-  isForecasting,
+  locations, risks, vehicles, shipments, recommendations, recommendationsLoading,
+  recommendationsLoadError, onTriggerOptimization, onRetrainForecast, onNavigateTab,
+  isOptimizing, isForecasting, isDataLoading,
 }) => {
-  const criticalRisks = risks.filter((r) => r.risk_state === 'CRITICAL');
-  const warningRisks = risks.filter((r) => r.risk_state === 'WARNING');
-  const criticalAlerts = alerts.filter((a) => a.severity === 'CRITICAL');
-
-  const baseDepots = locations.filter((l) => l.location_type === 'BASE_DEPOT').length;
-  const fsds = locations.filter((l) => l.location_type === 'FORWARD_SUPPLY_DEPOT').length;
-  const forwardPosts = locations.filter((l) => l.location_type === 'FORWARD_POST').length;
-
-  const activeVehicles = vehicles.filter(
-    (v) => (v.operational_status || v.status) === 'AVAILABLE'
-  ).length;
-  const activeShipments = shipments.filter(
-    (s) => s.status === 'IN_TRANSIT' || s.status === 'DISPATCHED'
-  ).length;
-
-  // Network Readiness Index calculation: 100 - (critical * 8 + warning * 2)
-  const readinessIndex = Math.max(
-    55,
-    Math.min(98, Math.round(100 - (criticalRisks.length * 7 + warningRisks.length * 1.5)))
-  );
+  const criticalRisks = risks.filter((risk) => risk.risk_state === 'CRITICAL');
+  const warningRisks = risks.filter((risk) => risk.risk_state === 'WARNING');
+  const attentionRisks = [...criticalRisks, ...warningRisks];
+  const delayedShipments = shipments.filter((shipment) => shipment.status === 'DELAYED');
+  const activeShipments = shipments.filter((shipment) => shipment.status === 'IN_TRANSIT' || shipment.status === 'DISPATCHED');
+  const availableVehicles = vehicles.filter((vehicle) => (vehicle.operational_status || vehicle.status) === 'AVAILABLE').length;
+  const statusName = (status: string) => status === 'CRITICAL' ? 'Urgent' : status === 'WARNING' ? 'Running low' : status;
 
   return (
-    <div className="space-y-6">
-      {/* Top Tactical KPI Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-tactical-900 border border-tactical-800 p-3.5 rounded-lg space-y-1">
-          <div className="flex items-center justify-between text-tactical-400 text-xs">
-            <span>Readiness Index</span>
-            <Activity className="w-3.5 h-3.5 text-accent-primary" />
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-blue-100 bg-gradient-to-r from-white via-white to-blue-50 p-5 shadow-sm sm:p-6" aria-labelledby="briefing-title">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-accent-primary">Current network snapshot</p>
+            <h3 id="briefing-title" className="mt-1 text-xl font-semibold tracking-tight text-tactical-100">Supply briefing</h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-tactical-400">Start with urgent or low-stock items and any delayed deliveries. Counts below come from the latest data returned by SupplyFlow.</p>
           </div>
-          <div className="text-2xl font-mono font-bold text-accent-primary">
-            {readinessIndex}%
-          </div>
-          <div className="text-[11px] font-mono text-accent-success flex items-center space-x-1">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>THEATER OPERATIONAL</span>
-          </div>
+          <span className="rounded-full border border-blue-100 bg-white px-3 py-1.5 text-xs font-medium text-accent-primary">Synthetic demonstration data</span>
         </div>
-
-        <div className="bg-tactical-900 border border-tactical-800 p-3.5 rounded-lg space-y-1">
-          <div className="flex items-center justify-between text-tactical-400 text-xs">
-            <span>Critical Stockouts</span>
-            <AlertOctagon className="w-3.5 h-3.5 text-accent-danger" />
-          </div>
-          <div className="text-2xl font-mono font-bold text-accent-danger">
-            {criticalRisks.length}
-          </div>
-          <div className="text-[11px] font-mono text-tactical-400">
-            DoS &lt; 2.0 Days Deficit
-          </div>
-        </div>
-
-        <div className="bg-tactical-900 border border-tactical-800 p-3.5 rounded-lg space-y-1">
-          <div className="flex items-center justify-between text-tactical-400 text-xs">
-            <span>Stock Warnings</span>
-            <Shield className="w-3.5 h-3.5 text-accent-warning" />
-          </div>
-          <div className="text-2xl font-mono font-bold text-accent-warning">
-            {warningRisks.length}
-          </div>
-          <div className="text-[11px] font-mono text-tactical-400">
-            DoS &lt; 5.0 Days Buffer
-          </div>
-        </div>
-
-        <div className="bg-tactical-900 border border-tactical-800 p-3.5 rounded-lg space-y-1">
-          <div className="flex items-center justify-between text-tactical-400 text-xs">
-            <span>Logistics Nodes</span>
-            <MapPin className="w-3.5 h-3.5 text-tactical-300" />
-          </div>
-          <div className="text-2xl font-mono font-bold text-tactical-100">
-            {locations.length}
-          </div>
-          <div className="text-[11px] font-mono text-tactical-400">
-            {baseDepots} BD • {fsds} FSD • {forwardPosts} FP
-          </div>
-        </div>
-
-        <div className="bg-tactical-900 border border-tactical-800 p-3.5 rounded-lg space-y-1">
-          <div className="flex items-center justify-between text-tactical-400 text-xs">
-            <span>Available Fleet</span>
-            <Truck className="w-3.5 h-3.5 text-tactical-300" />
-          </div>
-          <div className="text-2xl font-mono font-bold text-tactical-100">
-            {activeVehicles}/{vehicles.length || 18}
-          </div>
-          <div className="text-[11px] font-mono text-accent-success">
-            All-Terrain Convoys Ready
-          </div>
-        </div>
-
-        <div className="bg-tactical-900 border border-tactical-800 p-3.5 rounded-lg space-y-1">
-          <div className="flex items-center justify-between text-tactical-400 text-xs">
-            <span>Active Convoys</span>
-            <Clock className="w-3.5 h-3.5 text-tactical-300" />
-          </div>
-          <div className="text-2xl font-mono font-bold text-tactical-100">
-            {activeShipments}
-          </div>
-          <div className="text-[11px] font-mono text-tactical-400">
-            0600–1700 Window
-          </div>
-        </div>
-      </div>
-
-      {/* Operational Actions & Recommendations Banner */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Quick Operational Commands */}
-        <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-5 space-y-4">
-          <div className="flex items-center space-x-2">
-            <Zap className="w-4 h-4 text-accent-primary" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-tactical-200 font-mono">
-              Autonomous Operations Dispatch
-            </h3>
-          </div>
-          <p className="text-xs text-tactical-400">
-            Execute Google OR-Tools multi-depot vehicle routing to generate optimal replenishment
-            convoys based on current stockout urgency and terrain resistance.
-          </p>
-          <div className="space-y-2.5 pt-2">
-            <button
-              onClick={onTriggerOptimization}
-              disabled={isOptimizing}
-              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded bg-accent-primary hover:bg-accent-primary/90 text-white font-mono text-xs font-medium transition-colors shadow"
-            >
-              <Play className={`w-3.5 h-3.5 ${isOptimizing ? 'animate-spin' : ''}`} />
-              <span>{isOptimizing ? 'Solving CVRPTW Model...' : 'Solve Optimal Convoy Dispatch'}</span>
-            </button>
-
-            <button
-              onClick={onRetrainForecast}
-              disabled={isForecasting}
-              className="w-full flex items-center justify-center space-x-2 px-4 py-2 rounded bg-tactical-800 hover:bg-tactical-700 border border-tactical-700 text-tactical-200 font-mono text-xs font-medium transition-colors"
-            >
-              <RotateCcw className={`w-3.5 h-3.5 ${isForecasting ? 'animate-spin' : ''}`} />
-              <span>{isForecasting ? 'Training Quantile Trees...' : 'Retrain Quantile Forecasts'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Decision-Support Recommendations Preview */}
-        <div className="lg:col-span-2 bg-tactical-900 border border-tactical-800 rounded-lg p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Shield className="w-4 h-4 text-accent-warning" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-tactical-200 font-mono">
-                Priority Decision Recommendations
-              </h3>
-            </div>
-            <button
-              onClick={() => onNavigateTab('recommendations')}
-              className="text-xs font-mono text-accent-primary hover:underline flex items-center space-x-1"
-            >
-              <span>View All ({recommendations.length})</span>
-              <ArrowUpRight className="w-3 h-3" />
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            {recommendations.slice(0, 3).map((rec, idx) => (
-              <div
-                key={rec.id || idx}
-                className="p-3 bg-tactical-950 border border-tactical-800 rounded flex items-start justify-between space-x-3 text-xs"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold ${
-                        rec.priority === 'CRITICAL'
-                          ? 'bg-accent-danger/20 text-accent-danger border border-accent-danger/30'
-                          : 'bg-accent-warning/20 text-accent-warning border border-accent-warning/30'
-                      }`}
-                    >
-                      {rec.priority}
-                    </span>
-                    <span className="font-mono text-tactical-300 font-medium">
-                      {rec.recommendation_type.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <p className="text-tactical-400">{rec.action_summary}</p>
-                </div>
-              </div>
-            ))}
-
-            {recommendations.length === 0 && (
-              <div className="p-4 text-center text-xs font-mono text-tactical-500 bg-tactical-950 rounded">
-                No active critical recommendations. All inventory above DoS warning thresholds.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Critical Stockout Alerts Table Preview */}
-      <div className="bg-tactical-900 border border-tactical-800 rounded-lg p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <AlertOctagon className="w-4 h-4 text-accent-danger" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-tactical-200 font-mono">
-              Immediate High-Urgency Deficit Items
-            </h3>
-          </div>
-          <button
-            onClick={() => onNavigateTab('inventory')}
-            className="text-xs font-mono text-accent-primary hover:underline flex items-center space-x-1"
-          >
-            <span>Open Inventory Matrix</span>
-            <ArrowUpRight className="w-3 h-3" />
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <button type="button" onClick={() => onNavigateTab('inventory')} className="group flex min-h-[106px] items-center justify-between rounded-xl border border-red-100 bg-white p-4 text-left hover:border-red-200 hover:bg-red-50/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary">
+            <span><span className="block text-sm font-medium text-tactical-400">Urgent supplies</span><span className="mt-1 block text-3xl font-semibold tabular-nums text-accent-danger">{isDataLoading ? 'Loading' : criticalRisks.length}</span><span className="mt-1 block text-xs text-tactical-500">Review first. Under 2 days of supply</span></span><AlertTriangle className="h-5 w-5 text-accent-danger" aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onNavigateTab('inventory')} className="group flex min-h-[106px] items-center justify-between rounded-xl border border-amber-100 bg-white p-4 text-left hover:border-amber-200 hover:bg-amber-50/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary">
+            <span><span className="block text-sm font-medium text-tactical-400">Running low</span><span className="mt-1 block text-3xl font-semibold tabular-nums text-accent-warning">{isDataLoading ? 'Loading' : warningRisks.length}</span><span className="mt-1 block text-xs text-tactical-500">Review soon. Under 5 days of supply</span></span><Shield className="h-5 w-5 text-accent-warning" aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onNavigateTab('shipments')} className="group flex min-h-[106px] items-center justify-between rounded-xl border border-orange-100 bg-white p-4 text-left hover:border-orange-200 hover:bg-orange-50/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary">
+            <span><span className="block text-sm font-medium text-tactical-400">Delayed deliveries</span><span className="mt-1 block text-3xl font-semibold tabular-nums text-orange-800">{isDataLoading ? 'Loading' : delayedShipments.length}</span><span className="mt-1 block text-xs text-tactical-500">Check the current delivery status</span></span><Truck className="h-5 w-5 text-orange-800" aria-hidden="true" />
           </button>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-mono">
-            <thead className="bg-tactical-950 text-tactical-400 border-b border-tactical-800">
-              <tr>
-                <th className="py-2.5 px-3">Node</th>
-                <th className="py-2.5 px-3">Type</th>
-                <th className="py-2.5 px-3">Supply Item</th>
-                <th className="py-2.5 px-3">Stock on Hand</th>
-                <th className="py-2.5 px-3">Days of Supply</th>
-                <th className="py-2.5 px-3">Urgency Score</th>
-                <th className="py-2.5 px-3">Action Required</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-tactical-800 text-tactical-200">
-              {criticalRisks.slice(0, 5).map((risk, i) => (
-                <tr key={i} className="hover:bg-tactical-800/40 transition-colors">
-                  <td className="py-2.5 px-3 font-semibold text-tactical-100">
-                    {risk.location_code || '—'}
-                  </td>
-                  <td className="py-2.5 px-3 text-tactical-400">{risk.location_type || 'NODE'}</td>
-                  <td className="py-2.5 px-3">
-                    <span className="text-tactical-200">{risk.item_name || '—'}</span>
-                    <span className="text-[10px] text-tactical-500 ml-1.5">
-                      ({(risk.category || '').replace('CLASS_', 'CL-') || '—'})
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-3">
-                    {risk.current_quantity != null ? risk.current_quantity.toLocaleString() : '—'} units
-                  </td>
-                  <td className="py-2.5 px-3">
-                    <span className="px-2 py-0.5 rounded bg-accent-danger/20 text-accent-danger font-bold">
-                      {risk.days_of_supply != null ? `${risk.days_of_supply}d` : '—'}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-3 font-bold text-accent-danger">
-                    {risk.urgency_score != null ? `${Math.round(risk.urgency_score)}/100` : '—'}
-                  </td>
-                  <td className="py-2.5 px-3 text-tactical-300 text-[11px]">
-                    {risk.recommendation || risk.explainability?.[0] || 'Replenishment dispatch recommended'}
-                  </td>
-                </tr>
-              ))}
-              {criticalRisks.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-4 text-center text-tactical-500">
-                    No critical stockout risks detected across demonstration forward posts.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-blue-100 pt-3 text-xs text-tactical-500" aria-label="Additional network counts">
+          <span><MapPin className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />{isDataLoading ? 'Loading' : locations.length} locations</span>
+          <span><Truck className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />{isDataLoading ? 'Loading' : availableVehicles} of {isDataLoading ? 'Loading' : vehicles.length} vehicles available</span>
+          <span><Clock className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />{isDataLoading ? 'Loading' : activeShipments.length} deliveries in progress</span>
         </div>
-      </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <div className="space-y-5 xl:col-span-2">
+          <section className="overflow-hidden rounded-xl border border-tactical-800 bg-white shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-tactical-800 p-5">
+              <div><h3 className="text-base font-semibold text-tactical-100">Items to review</h3><p className="mt-1 text-sm text-tactical-400">Urgent and low-stock records from the current assessment.</p></div>
+              <button type="button" onClick={() => onNavigateTab('inventory')} className="inline-flex min-h-10 items-center gap-1 rounded-lg px-3 text-sm font-medium text-accent-primary hover:bg-blue-50">All supplies <ArrowUpRight className="h-4 w-4" aria-hidden="true" /></button>
+            </div>
+            {isDataLoading ? <p role="status" className="p-5 text-sm text-tactical-400">Loading supply status...</p> : attentionRisks.length ? <div tabIndex={0} role="region" aria-label="Scroll supply attention table horizontally" className="table-scroll overflow-x-auto">
+              <table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-tactical-50 text-tactical-400"><tr><th className="px-4 py-3 font-medium">Location</th><th className="px-4 py-3 font-medium">Supply item</th><th className="px-4 py-3 font-medium">Days left</th><th className="px-4 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-tactical-800">{attentionRisks.slice(0, 6).map((risk) => <tr key={`${risk.location_id}-${risk.item_id}`} className="hover:bg-tactical-50"><td className="px-4 py-3 font-medium text-tactical-100">{risk.location_code || 'Not available'}</td><td className="px-4 py-3 text-tactical-300">{risk.item_name || 'Not available'}{risk.recommendation && <span className="mt-1 block max-w-xl text-xs leading-5 text-tactical-500">{risk.recommendation}</span>}</td><td className="px-4 py-3 tabular-nums">{risk.days_of_supply == null ? 'Not available' : `${risk.days_of_supply} days`}</td><td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${risk.risk_state === 'CRITICAL' ? 'bg-red-50 text-accent-danger' : 'bg-amber-50 text-amber-800'}`}>{statusName(risk.risk_state)}</span></td></tr>)}</tbody></table>
+              {attentionRisks.length > 6 && <p className="px-4 py-3 text-xs text-tactical-500">Showing 6 of {attentionRisks.length} records. Open Supplies to see all records.</p>}
+            </div> : <p className="p-5 text-sm text-tactical-400">No urgent or low-stock records were returned in the current demonstration data.</p>}
+          </section>
+
+          <section className="rounded-xl border border-tactical-800 bg-white p-5 shadow-sm" aria-labelledby="delayed-title">
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="delayed-title" className="text-base font-semibold text-tactical-100">Deliveries requiring review</h3><p className="mt-1 text-sm text-tactical-400">Deliveries marked delayed in the current SupplyFlow records.</p></div><button type="button" onClick={() => onNavigateTab('shipments')} className="min-h-10 rounded-lg px-3 text-sm font-medium text-accent-primary hover:bg-blue-50">View deliveries</button></div>
+            {isDataLoading ? <p role="status" className="mt-3 text-sm text-tactical-400">Loading delivery records...</p> : delayedShipments.length ? <ul className="mt-3 divide-y divide-tactical-800">{delayedShipments.slice(0, 4).map((shipment) => <li key={shipment.id} className="flex flex-wrap items-center justify-between gap-2 py-3"><span className="font-medium text-tactical-200">{shipment.shipment_code || shipment.shipment_number || 'Delivery identifier unavailable'}</span><span className="text-sm text-tactical-500">{shipment.origin_location?.code || 'Origin unavailable'} to {shipment.destination_location?.code || 'Destination unavailable'}</span><span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-800">Delayed</span></li>)}</ul> : <p className="mt-3 rounded-lg bg-tactical-50 p-3 text-sm text-tactical-400">No delayed deliveries were returned.</p>}
+          </section>
+        </div>
+
+        <section className="h-fit space-y-4 rounded-xl border border-tactical-800 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-accent-primary" aria-hidden="true" /><h3 className="text-base font-semibold text-tactical-100">Useful next steps</h3></div>
+          <p className="text-sm leading-6 text-tactical-400">Use the planning tools to prepare proposals or refresh the demand model. Review results before taking any action.</p>
+          <div className="space-y-2">
+            <button type="button" onClick={onTriggerOptimization} disabled={isOptimizing} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent-primary px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"><Play className="h-4 w-4" aria-hidden="true" />{isOptimizing ? 'Preparing proposals...' : 'Prepare delivery proposals'}</button>
+            <button type="button" onClick={onRetrainForecast} disabled={isForecasting} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-tactical-700 bg-white px-4 py-3 text-sm font-medium text-tactical-300 hover:bg-tactical-50 disabled:opacity-60"><RotateCcw className="h-4 w-4" aria-hidden="true" />{isForecasting ? 'Updating forecasts...' : 'Update demand forecasts'}</button>
+          </div>
+          <div className="border-t border-tactical-800 pt-4"><div className="flex items-center justify-between gap-2"><h4 className="text-sm font-semibold text-tactical-100">Latest proposal</h4><button type="button" onClick={() => onNavigateTab('recommendations')} className="min-h-9 rounded px-2 text-xs font-medium text-accent-primary hover:bg-blue-50">Review {recommendations.length}</button></div>
+            {recommendationsLoading ? <p role="status" className="mt-3 text-sm text-tactical-400">Loading proposals...</p> : recommendationsLoadError ? <p role="alert" className="mt-3 text-sm text-tactical-400">Proposals could not be loaded. Refresh and try again.</p> : recommendations.length ? <div className="mt-3 rounded-lg bg-tactical-50 p-3"><p className="text-sm font-semibold text-tactical-300">{getRecommendationTitle(recommendations[0].recommendation_type)}</p><p className="mt-1 text-xs leading-5 text-tactical-500">{recommendations[0].status === 'PROPOSED' ? 'Requires human review' : recommendations[0].status || 'Status unavailable'}</p><p className="mt-2 text-xs leading-5 text-tactical-400">{getRecommendationDetailRows(recommendations[0].details).map(({ label, value }) => `${label}: ${value}`).join(' | ') || 'No additional details were provided.'}</p></div> : <p className="mt-3 text-sm text-tactical-400">No proposals were returned.</p>}
+          </div>
+        </section>
+      </section>
     </div>
   );
 };

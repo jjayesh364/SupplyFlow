@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # Data governance & labelling
     DEMO_THEATER_LABEL: str = "DEMONSTRATION THEATER — SYNTHETIC LOGISTICS NETWORK"
     IS_SYNTHETIC_DATA_ONLY: bool = True
+    DEMO_READ_ONLY_MODE: bool = False
 
     # Backend networking & CORS
     BACKEND_HOST: str = "0.0.0.0"
@@ -54,6 +55,12 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "supplyflow"
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/supplyflow"
     SYNC_DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/supplyflow"
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+
+    # Optional read-only assistant. Only Standard free-tier Gemini access is supported.
+    GEMINI_API_KEY: str = ""
+    GEMINI_TIMEOUT_SECONDS: float = 60.0
 
     # Configurable operational demonstration parameters (never hard-coded in logic)
     DEFAULT_DOS_CRITICAL_THRESHOLD_DAYS: float = 2.0

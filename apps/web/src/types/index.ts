@@ -85,24 +85,36 @@ export interface InventoryRiskItem {
 export interface DemandForecastItem {
   id: string;
   location_id: string;
-  supply_item_id: string;
+  location_code: string | null;
+  item_id: string;
+  item_name: string | null;
   forecast_date: string;
-  horizon_days: number;
-  predicted_quantity: number;
-  lower_bound: number;
-  upper_bound: number;
-  feature_contributions?: Record<string, any>;
-  location?: LocationNode;
-  supply_item?: SupplyItem;
+  predicted_demand_p10: number | null;
+  predicted_demand_p50: number | null;
+  predicted_demand_p90: number | null;
+  model_version: string;
+  feature_contributions: {
+    wape?: number;
+    horizon_days?: number;
+    explainability?: string[];
+  } | null;
+  synthetic_data: boolean;
 }
 
 export interface ForecastMetrics {
   wape: number;
+  baseline_wape: number;
+  wape_improvement_pct: number;
   mae: number;
   rmse: number;
-  total_eval_samples: number;
-  horizons_evaluated: number;
-  is_synthetic_data: boolean;
+  samples_evaluated: number;
+}
+
+export interface ForecastTrainingResponse {
+  status: string;
+  total_forecasts_generated: number;
+  horizon_days: number;
+  evaluation_metrics?: ForecastMetrics;
 }
 
 export interface AlertItem {
@@ -183,10 +195,19 @@ export interface OptimizationRunResult {
 
 export interface RecommendationItem {
   id: string;
+  optimization_run_id: string;
   recommendation_type: string;
-  priority: string;
-  action_summary: string;
-  payload: Record<string, any>;
+  details: {
+    vehicle_code?: string;
+    stops?: string[];
+    stops_count?: number;
+    allocated_payload_kg?: number;
+    capacity_kg?: number;
+    estimated_hours?: number;
+    total_distance_km?: number;
+  } | null;
+  status: string;
+  created_at: string;
 }
 
 export interface VehicleItem {
@@ -204,43 +225,42 @@ export interface VehicleItem {
 
 export interface ShipmentItemRecord {
   id: string;
-  shipment_number: string;
+  shipment_number?: string;
+  shipment_code?: string;
   origin_location_id: string;
   destination_location_id: string;
   vehicle_id: string;
   status: string;
-  dispatch_time: string | null;
-  estimated_arrival: string | null;
-  priority: string;
-  total_weight_kg: number;
+  dispatch_time?: string | null;
+  departure_time?: string | null;
+  estimated_arrival?: string | null;
+  estimated_arrival_time?: string | null;
+  actual_arrival_time?: string | null;
+  priority?: string;
+  total_weight_kg?: number | null;
   origin_location?: LocationNode;
   destination_location?: LocationNode;
+  vehicle?: VehicleItem | null;
+  items?: Array<{ quantity: number; item?: { name?: string | null; unit?: string | null } | null }>;
+}
+
+export interface SimulationMetrics {
+  name: string;
+  description: string;
+  critical_stockout_locations: number;
+  warning_stockout_locations: number;
+  average_days_of_supply: number;
+  total_unmet_demand_kg: number;
+  blocked_corridors_count: number;
+  average_route_friction: number;
+  delayed_shipments_count: number;
 }
 
 export interface SimulationResult {
   status: string;
   scenario_requested: string;
-  theater_label: string;
-  baseline: {
-    total_locations: number;
-    critical_stockout_locations: number;
-    warning_stockout_locations: number;
-    average_days_of_supply: number;
-    total_unmet_demand_kg: number;
-    blocked_corridors_count: number;
-    average_route_friction: number;
-    delayed_shipments_count: number;
-  };
-  simulation: {
-    total_locations: number;
-    critical_stockout_locations: number;
-    warning_stockout_locations: number;
-    average_days_of_supply: number;
-    total_unmet_demand_kg: number;
-    blocked_corridors_count: number;
-    average_route_friction: number;
-    delayed_shipments_count: number;
-  };
+  baseline: SimulationMetrics;
+  scenario: SimulationMetrics;
   delta: {
     critical_stockouts_delta: number;
     average_dos_delta: number;
@@ -249,17 +269,4 @@ export interface SimulationResult {
     route_friction_delta: number;
     delayed_shipments_delta: number;
   };
-  disrupted_corridors: Array<{
-    id: string;
-    name: string;
-    weather_friction: number;
-    is_blocked: boolean;
-  }>;
-  critical_nodes: Array<{
-    location_code: string;
-    location_name: string;
-    days_of_supply: number;
-    urgency_score: number;
-  }>;
-  operational_impact_summary: string;
 }

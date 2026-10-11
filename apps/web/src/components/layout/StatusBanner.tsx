@@ -11,16 +11,16 @@ export const StatusBanner: React.FC<StatusBannerProps> = ({
   isSynthetic = true,
 }) => {
   return (
-    <div className="w-full bg-tactical-900 border-b border-tactical-800 text-xs px-4 py-1.5 flex items-center justify-between text-tactical-400">
+    <div className="w-full bg-[#edf1f2] border-b border-tactical-800 text-[11px] px-4 md:px-7 py-2 flex flex-wrap gap-y-1 items-center justify-between text-tactical-400">
       <div className="flex items-center space-x-2">
-        <span className="inline-block w-2 h-2 rounded-full bg-accent-warning animate-pulse" />
-        <span className="font-mono font-semibold tracking-wider text-tactical-200 uppercase">
+        <span className="inline-block w-2 h-2 rounded-full bg-accent-warning" />
+        <span className="font-semibold tracking-wide text-tactical-200 uppercase">
           {label}
         </span>
       </div>
       <div className="flex items-center space-x-3 text-[11px]">
         {isSynthetic && (
-          <span className="bg-tactical-800 border border-tactical-700 text-tactical-300 px-2 py-0.5 rounded font-mono">
+          <span className="bg-white border border-tactical-800 text-tactical-300 px-2 py-1 rounded-full font-medium">
             SYNTHETIC SIMULATION DATA ONLY
           </span>
         )}

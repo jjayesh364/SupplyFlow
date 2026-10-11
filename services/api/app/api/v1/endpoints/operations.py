@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.demo_safety import require_write_actions_enabled
 from app.db.session import get_db
 from app.models.optimization import Recommendation
 from app.services.optimization.vrp_service import vrp_service
@@ -28,6 +29,7 @@ class SimulationRequest(BaseModel):
 )
 async def solve_fleet_dispatch(
     max_solve_time_seconds: int = Query(5, ge=1, le=30),
+    _write_enabled: None = Depends(require_write_actions_enabled),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Execute OR-Tools CVRPTW solver."""

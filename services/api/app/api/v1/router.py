@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    assistant,
     gis,
     health,
     intelligence,
@@ -17,6 +18,7 @@ from app.api.v1.endpoints import (
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["Health & System"])
+api_router.include_router(assistant.router, tags=["AI Help"])
 api_router.include_router(locations.router, tags=["Locations"])
 api_router.include_router(supplies.router, tags=["Supply Catalog"])
 api_router.include_router(inventory.router, tags=["Inventory"])
