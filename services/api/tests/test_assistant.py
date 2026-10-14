@@ -98,6 +98,60 @@ async def test_free_quota_exhaustion_has_no_paid_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_provider_http_failure_logs_safe_diagnostics_only(monkeypatch, caplog):
+    secret = "test-secret-api-key"
+    prompt = "private test question"
+    provider_message = f"Invalid key {secret}; rejected prompt {prompt}"
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", secret)
+
+    class ErrorResponse:
+        status_code = 403
+
+        def json(self):
+            return {"error": {"code": 403, "status": "PERMISSION_DENIED", "message": provider_message}}
+
+    class Client:
+        def __init__(self, **_kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, *_args, **_kwargs): return ErrorResponse()
+
+    monkeypatch.setattr(assistant_service.httpx, "AsyncClient", Client)
+    with pytest.raises(AssistantUnavailable, match="No paid fallback"):
+        await assistant_service.explain(prompt, [])
+
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "HTTP 403" in messages
+    assert "PERMISSION_DENIED" in messages
+    assert "provider_code=403" in messages
+    assert secret not in messages
+    assert prompt not in messages
+    assert provider_message not in messages
+
+
+@pytest.mark.asyncio
+async def test_provider_transport_failure_logs_exception_type_without_details(monkeypatch, caplog):
+    secret = "test-secret-api-key"
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", secret)
+
+    class Client:
+        def __init__(self, **_kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, *_args, **_kwargs):
+            raise httpx.ConnectError(f"could not connect with {secret}")
+
+    monkeypatch.setattr(assistant_service.httpx, "AsyncClient", Client)
+    with pytest.raises(AssistantUnavailable, match="provider could not be reached"):
+        await assistant_service.explain("private test question", [])
+
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "transport failure (ConnectError)" in messages
+    assert secret not in messages
+    assert "private test question" not in messages
+
+
+@pytest.mark.asyncio
 async def test_provider_call_uses_stable_model_server_header_and_bounded_output(monkeypatch):
     monkeypatch.setattr(settings, "GEMINI_API_KEY", "mock-only")
     monkeypatch.setattr(settings, "GEMINI_TIMEOUT_SECONDS", 60.0)

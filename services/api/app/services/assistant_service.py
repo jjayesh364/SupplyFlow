@@ -271,11 +271,32 @@ async def explain(question: str, facts: list[dict[str, str]], language: str = "e
         logger.warning("Gemini operation generate_content timed out (%s)", type(exc).__name__)
         raise AssistantUnavailable("AI help is temporarily unavailable because the provider timed out.") from exc
     except httpx.HTTPError as exc:
+        logger.warning("Gemini operation generate_content transport failure (%s)", type(exc).__name__)
         raise AssistantUnavailable("AI help is temporarily unavailable because the provider could not be reached.") from exc
 
     if response.status_code == 429:
+        logger.warning("Gemini operation generate_content failed with HTTP 429 (free quota or rate limit)")
         raise AssistantUnavailable("AI help is temporarily unavailable because the free Gemini quota is exhausted. Try again later.")
     if response.status_code >= 400:
+        provider_status = None
+        provider_code = None
+        try:
+            error = response.json().get("error", {})
+            if isinstance(error, dict):
+                raw_status = error.get("status")
+                raw_code = error.get("code")
+                if isinstance(raw_status, str) and re.fullmatch(r"[A-Z0-9_]{1,64}", raw_status):
+                    provider_status = raw_status
+                if isinstance(raw_code, int) and not isinstance(raw_code, bool):
+                    provider_code = raw_code
+        except (ValueError, AttributeError, TypeError):
+            pass
+        logger.warning(
+            "Gemini operation generate_content failed with HTTP %d (provider_status=%s, provider_code=%s)",
+            response.status_code,
+            provider_status or "unavailable",
+            provider_code if provider_code is not None else "unavailable",
+        )
         raise AssistantUnavailable("AI help is temporarily unavailable. No paid fallback is configured.")
     try:
         data = response.json()
