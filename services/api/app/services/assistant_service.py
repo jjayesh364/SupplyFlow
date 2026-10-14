@@ -1,10 +1,13 @@
 """Read-only, synthetic-data-only context and Gemini explanation service."""
 
+import asyncio
 import json
 import logging
+import random
 import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -30,6 +33,7 @@ MAX_COMPLETE_WARNING_RECORDS = 4
 MAX_QUESTION_CHARS = 1000
 MAX_ANSWER_CHARS = 4000
 MAX_REQUESTS_PER_MINUTE = 10
+MAX_503_RETRY_AFTER_SECONDS = 5.0
 SUPPORTED_LANGUAGES = {
     "en": "English",
     "hi": "Hindi",
@@ -60,6 +64,31 @@ _SENSITIVE_TERMS = re.compile(
 
 class AssistantUnavailable(Exception):
     """The assistant cannot produce an answer without guessing or exceeding free limits."""
+
+
+def _503_retry_delay(response: httpx.Response) -> float | None:
+    """Return a short jittered retry delay, or None for an excessive Retry-After."""
+    retry_after = response.headers.get("Retry-After")
+    requested_delay: float | None = None
+    if retry_after:
+        try:
+            requested_delay = float(retry_after)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=UTC)
+                requested_delay = max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
+            except (TypeError, ValueError, OverflowError):
+                requested_delay = None
+
+    if requested_delay is not None:
+        if requested_delay < 0:
+            requested_delay = 0.0
+        if requested_delay > MAX_503_RETRY_AFTER_SECONDS:
+            return None
+        return requested_delay + random.uniform(0.05, 0.2)
+    return random.uniform(0.25, 0.6)
 
 
 def assistant_available() -> bool:
@@ -267,6 +296,18 @@ async def explain(question: str, facts: list[dict[str, str]], language: str = "e
                 headers={"x-goog-api-key": settings.GEMINI_API_KEY.strip()},
                 json=payload,
             )
+            if response.status_code == 503:
+                retry_delay = _503_retry_delay(response)
+                if retry_delay is None:
+                    logger.warning("Gemini operation generate_content received HTTP 503; retry skipped due to Retry-After")
+                else:
+                    logger.warning("Gemini operation generate_content received HTTP 503; retrying once")
+                    await asyncio.sleep(retry_delay)
+                    response = await client.post(
+                        GEMINI_URL.format(model=GEMINI_MODEL),
+                        headers={"x-goog-api-key": settings.GEMINI_API_KEY.strip()},
+                        json=payload,
+                    )
     except httpx.TimeoutException as exc:
         logger.warning("Gemini operation generate_content timed out (%s)", type(exc).__name__)
         raise AssistantUnavailable("AI help is temporarily unavailable because the provider timed out.") from exc
@@ -297,6 +338,8 @@ async def explain(question: str, facts: list[dict[str, str]], language: str = "e
             provider_status or "unavailable",
             provider_code if provider_code is not None else "unavailable",
         )
+        if response.status_code == 503:
+            raise AssistantUnavailable("AI help is temporarily unavailable. Please try again shortly.")
         raise AssistantUnavailable("AI help is temporarily unavailable. No paid fallback is configured.")
     try:
         data = response.json()

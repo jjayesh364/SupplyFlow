@@ -157,6 +157,8 @@ async def test_provider_call_uses_stable_model_server_header_and_bounded_output(
     monkeypatch.setattr(settings, "GEMINI_TIMEOUT_SECONDS", 60.0)
     captured = {}
 
+    calls = []
+
     class Response:
         status_code = 200
 
@@ -174,6 +176,7 @@ async def test_provider_call_uses_stable_model_server_header_and_bounded_output(
             return None
 
         async def post(self, url, **kwargs):
+            calls.append(url)
             captured.update(url=url, **kwargs)
             return Response()
 
@@ -192,6 +195,149 @@ async def test_provider_call_uses_stable_model_server_header_and_bounded_output(
         "pool": 60.0,
     }
     assert "summarize" in captured["json"]["contents"][0]["parts"][0]["text"]
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_503_retries_once_after_retry_after_and_then_succeeds(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "mock-only")
+    delays = []
+    calls = 0
+
+    async def fake_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(assistant_service.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(assistant_service.random, "uniform", lambda low, high: 0.1)
+
+    class Response:
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.headers = {}
+
+        def json(self):
+            return {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "Service is available."}]}}]}
+
+    class UnavailableResponse(Response):
+        def __init__(self, status_code):
+            super().__init__(status_code)
+            self.headers = {"Retry-After": "2"}
+
+        def json(self):
+            return {"error": {"code": 503, "status": "UNAVAILABLE", "message": "private provider detail"}}
+
+    class Client:
+        def __init__(self, **_kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            return UnavailableResponse(503) if calls == 1 else Response(200)
+
+    monkeypatch.setattr(assistant_service.httpx, "AsyncClient", Client)
+    assert await assistant_service.explain("summarize", []) == "Service is available."
+    assert calls == 2
+    assert delays == [2.1]
+
+
+@pytest.mark.asyncio
+async def test_provider_503_fails_after_exactly_one_retry_with_safe_message(monkeypatch, caplog):
+    secret = "test-secret-api-key"
+    prompt = "private test question"
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", secret)
+
+    async def fake_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(assistant_service.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(assistant_service.random, "uniform", lambda _low, _high: 0.1)
+    calls = 0
+
+    class Response:
+        status_code = 503
+
+        def __init__(self):
+            self.headers = {"Retry-After": "0"}
+
+        def json(self):
+            return {"error": {"code": 503, "status": "UNAVAILABLE", "message": f"{secret} {prompt}"}}
+
+    class Client:
+        def __init__(self, **_kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            return Response()
+
+    monkeypatch.setattr(assistant_service.httpx, "AsyncClient", Client)
+    with pytest.raises(AssistantUnavailable, match="temporarily unavailable.*try again shortly"):
+        await assistant_service.explain(prompt, [])
+
+    assert calls == 2
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert secret not in messages
+    assert prompt not in messages
+    assert f"{secret} {prompt}" not in messages
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 401, 403, 429])
+async def test_provider_non_retryable_http_errors_are_not_retried(monkeypatch, status_code):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "mock-only")
+    calls = 0
+
+    class Response:
+        def __init__(self):
+            self.status_code = status_code
+            self.headers = {}
+
+        def json(self):
+            return {"error": {"code": status_code, "status": "NON_RETRYABLE", "message": "private detail"}}
+
+    class Client:
+        def __init__(self, **_kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            return Response()
+
+    monkeypatch.setattr(assistant_service.httpx, "AsyncClient", Client)
+    with pytest.raises(AssistantUnavailable):
+        await assistant_service.explain("question", [])
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_503_with_long_retry_after_does_not_retry_early(monkeypatch):
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "mock-only")
+    calls = 0
+
+    class Response:
+        status_code = 503
+
+        def __init__(self):
+            self.headers = {"Retry-After": "60"}
+        def json(self):
+            return {"error": {"code": 503, "status": "UNAVAILABLE"}}
+
+    class Client:
+        def __init__(self, **_kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return None
+        async def post(self, *_args, **_kwargs):
+            nonlocal calls
+            calls += 1
+            return Response()
+
+    monkeypatch.setattr(assistant_service.httpx, "AsyncClient", Client)
+    with pytest.raises(AssistantUnavailable, match="temporarily unavailable.*try again shortly"):
+        await assistant_service.explain("question", [])
+    assert calls == 1
 
 
 def test_gemini_timeout_default_and_environment_override(monkeypatch):
