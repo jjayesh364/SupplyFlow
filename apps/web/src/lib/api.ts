@@ -62,26 +62,223 @@ export interface AssistantReply {
   synthetic_data?: boolean;
 }
 
-async function safeFetch<T>(endpoint: string, options?: RequestInit): Promise<T | null> {
-  try {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      cache: 'no-store',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        ...(options?.headers || {}),
-      },
-      ...options,
-    });
-    if (!res.ok) {
-      console.warn(`API request ${endpoint} returned HTTP ${res.status}`);
-      return null;
+export interface SafeFetchOptions extends RequestInit {
+  timeoutMs?: number;
+  retries?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  skipDedupe?: boolean;
+}
+
+export interface ConnectionStateSnapshot {
+  isWakingUp: boolean;
+  isRetrying: boolean;
+  activeRetriesCount: number;
+}
+
+type ConnectionStateListener = (snapshot: ConnectionStateSnapshot) => void;
+
+const connectionListeners = new Set<ConnectionStateListener>();
+let activeRetriesCount = 0;
+let isWakingUpState = false;
+
+function notifyConnectionListeners() {
+  const snapshot: ConnectionStateSnapshot = {
+    isWakingUp: isWakingUpState,
+    isRetrying: activeRetriesCount > 0,
+    activeRetriesCount,
+  };
+  connectionListeners.forEach((listener) => {
+    try {
+      listener(snapshot);
+    } catch {
+      // Ignore subscriber errors
     }
-    return (await res.json()) as T;
-  } catch (error) {
-    console.error(`Network error requesting ${endpoint}:`, error);
-    return null;
+  });
+}
+
+export function subscribeConnectionState(listener: ConnectionStateListener): () => void {
+  connectionListeners.add(listener);
+  listener({
+    isWakingUp: isWakingUpState,
+    isRetrying: activeRetriesCount > 0,
+    activeRetriesCount,
+  });
+  return () => {
+    connectionListeners.delete(listener);
+  };
+}
+
+export function getConnectionState(): ConnectionStateSnapshot {
+  return {
+    isWakingUp: isWakingUpState,
+    isRetrying: activeRetriesCount > 0,
+    activeRetriesCount,
+  };
+}
+
+// In-flight deduplication map for identical GET requests
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
+export function parseRetryAfter(headerValue: string | null): number | null {
+  if (!headerValue) return null;
+  const seconds = Number(headerValue);
+  if (!Number.isNaN(seconds) && seconds >= 0) {
+    return seconds * 1000;
   }
+  const dateParsed = Date.parse(headerValue);
+  if (!Number.isNaN(dateParsed)) {
+    const diff = dateParsed - Date.now();
+    return diff > 0 ? diff : 0;
+  }
+  return null;
+}
+
+export function calculateBackoffDelay(
+  attempt: number,
+  baseDelayMs: number = 1000,
+  maxDelayMs: number = 10000,
+  retryAfterMs?: number | null
+): number {
+  if (retryAfterMs != null && retryAfterMs > 0) {
+    return Math.min(retryAfterMs, maxDelayMs);
+  }
+  const exponential = Math.min(baseDelayMs * Math.pow(2, attempt - 1), maxDelayMs);
+  const jitter = Math.floor(Math.random() * 500);
+  return exponential + jitter;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function safeFetch<T>(endpoint: string, options?: SafeFetchOptions): Promise<T | null> {
+  const method = (options?.method || 'GET').toUpperCase();
+  const isIdempotent = method === 'GET' || method === 'HEAD';
+  const shouldDedupe = isIdempotent && !options?.skipDedupe;
+  const dedupeKey = `${method}:${API_BASE}${endpoint}`;
+
+  if (shouldDedupe && inFlightRequests.has(dedupeKey)) {
+    return inFlightRequests.get(dedupeKey) as Promise<T | null>;
+  }
+
+  const fetchPromise = (async (): Promise<T | null> => {
+    // Non-idempotent operations (POST, PUT, DELETE) must NEVER be automatically retried.
+    const maxRetries = isIdempotent ? (options?.retries ?? 4) : 0;
+    const timeoutMs = options?.timeoutMs ?? 15000;
+    const baseDelayMs = options?.baseDelayMs ?? 1000;
+    const maxDelayMs = options?.maxDelayMs ?? 10000;
+
+    let attempt = 0;
+
+    while (attempt <= maxRetries) {
+      attempt++;
+      const controller = new AbortController();
+      let didTimeout = false;
+      const timeoutId = setTimeout(() => {
+        didTimeout = true;
+        controller.abort(new Error('Request timed out'));
+      }, timeoutMs);
+
+      if (options?.signal) {
+        options.signal.addEventListener('abort', () => controller.abort(options.signal?.reason), { once: true });
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}${endpoint}`, {
+          cache: 'no-store',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            ...(options?.headers || {}),
+          },
+          ...options,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        const getHeader = (name: string): string | null => {
+          if (!res.headers || typeof res.headers.get !== 'function') return null;
+          return res.headers.get(name);
+        };
+
+        const isTransientStatus =
+          res.status === 502 || res.status === 503 || res.status === 504 || res.status === 429 || res.status === 408;
+        const contentType = getHeader('content-type') || '';
+        const isHtmlWakeupPage = contentType.includes('text/html');
+
+        if (isTransientStatus || isHtmlWakeupPage || !res.ok) {
+          if (!res.ok) {
+            console.warn(`API request ${endpoint} returned HTTP ${res.status}${isHtmlWakeupPage ? ' (HTML wake-up response)' : ''}`);
+          }
+
+          if (isIdempotent && attempt <= maxRetries && (isTransientStatus || isHtmlWakeupPage)) {
+            isWakingUpState = true;
+            activeRetriesCount++;
+            notifyConnectionListeners();
+
+            const retryAfterMs = parseRetryAfter(getHeader('Retry-After'));
+            const delay = calculateBackoffDelay(attempt, baseDelayMs, maxDelayMs, retryAfterMs);
+            await sleep(delay);
+
+            activeRetriesCount = Math.max(0, activeRetriesCount - 1);
+            if (activeRetriesCount === 0) {
+              isWakingUpState = false;
+            }
+            notifyConnectionListeners();
+            continue;
+          }
+
+          return null;
+        }
+
+        try {
+          const data = (await res.json()) as T;
+          return data;
+        } catch (jsonErr) {
+          console.error(`Failed to parse JSON response from ${endpoint}:`, jsonErr);
+          return null;
+        }
+      } catch (err: unknown) {
+        clearTimeout(timeoutId);
+
+        const isAbortOrTimeout = didTimeout || (err instanceof Error && err.name === 'AbortError');
+        const isNetworkError = err instanceof TypeError || isAbortOrTimeout;
+
+        if (isIdempotent && attempt <= maxRetries && isNetworkError) {
+          console.warn(`Transient network error on ${endpoint} (attempt ${attempt}/${maxRetries}):`, err);
+          isWakingUpState = true;
+          activeRetriesCount++;
+          notifyConnectionListeners();
+
+          const delay = calculateBackoffDelay(attempt, baseDelayMs, maxDelayMs, null);
+          await sleep(delay);
+
+          activeRetriesCount = Math.max(0, activeRetriesCount - 1);
+          if (activeRetriesCount === 0) {
+            isWakingUpState = false;
+          }
+          notifyConnectionListeners();
+          continue;
+        }
+
+        console.error(`Network error requesting ${endpoint}:`, err);
+        return null;
+      }
+    }
+
+    return null;
+  })();
+
+  if (shouldDedupe) {
+    inFlightRequests.set(dedupeKey, fetchPromise);
+    fetchPromise.finally(() => {
+      inFlightRequests.delete(dedupeKey);
+    });
+  }
+
+  return fetchPromise;
 }
 
 export async function fetchBackendHealth(): Promise<BackendHealthResponse | null> {

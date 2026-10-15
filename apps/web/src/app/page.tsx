@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Header } from '@/components/layout/Header';
+import { Header, SystemStatus } from '@/components/layout/Header';
 import { TacticalMapViewer } from '@/components/gis/TacticalMapViewer';
 import { OverviewTab } from '@/components/operations/OverviewTab';
 import { InventoryRiskTab } from '@/components/operations/InventoryRiskTab';
@@ -24,6 +24,7 @@ import {
   fetchSupplies,
   fetchVehicles,
   runSimulation,
+  subscribeConnectionState,
   triggerForecastTraining,
   triggerOptimization,
 } from '@/lib/api';
@@ -75,6 +76,11 @@ export default function Home() {
   const [routePlan, setRoutePlan] = useState<RoutePlanResult | null>(null);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
 
+  // Connection lifecycle and data freshness states
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>('waking_up');
+  const [isStaleData, setIsStaleData] = useState<boolean>(false);
+  const hasLoadedInitialDataRef = useRef<boolean>(false);
+
   // Loading states
   const [loading, setLoading] = useState<boolean>(true);
   const [isOptimizing, setIsOptimizing] = useState<boolean>(false);
@@ -82,8 +88,24 @@ export default function Home() {
   const [isRouting, setIsRouting] = useState<boolean>(false);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
 
+  useEffect(() => {
+    const unsubscribe = subscribeConnectionState(({ isWakingUp, isRetrying }) => {
+      if (isWakingUp || isRetrying) {
+        setSystemStatus((current) => {
+          if (current === 'healthy') return 'reconnecting';
+          if (!hasLoadedInitialDataRef.current) return 'waking_up';
+          return 'reconnecting';
+        });
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   const loadAllData = useCallback(async () => {
     setLoading(true);
+    if (hasLoadedInitialDataRef.current) {
+      setIsStaleData(true);
+    }
     try {
       const [
         healthData,
@@ -110,7 +132,26 @@ export default function Home() {
       forecastSelectionRef.current = { locationId, itemId };
       const fcData = await fetchForecasts(locationId || undefined, itemId || undefined);
 
-      if (healthData) setHealth(healthData);
+      const anyDataSucceeded =
+        Boolean(healthData) ||
+        locsData.length > 0 ||
+        suppliesData.length > 0 ||
+        risksData.length > 0 ||
+        vehData.length > 0 ||
+        shipData.length > 0 ||
+        recsData !== null;
+
+      if (healthData) {
+        setHealth(healthData);
+        setSystemStatus(healthData.status);
+      } else if (anyDataSucceeded) {
+        setSystemStatus('healthy');
+      } else if (!hasLoadedInitialDataRef.current) {
+        setSystemStatus('offline');
+      } else {
+        setSystemStatus('reconnecting');
+      }
+
       if (locsData.length > 0) {
         setLocations(locsData);
         setSelectedNode((prev) => prev || locsData[0]);
@@ -119,13 +160,23 @@ export default function Home() {
       if (geoData) setGeoJson(geoData);
       if (risksData.length > 0) setRisks(risksData);
       if (fcData !== null) setForecasts(fcData);
-      setForecastLoadError(fcData === null);
+      setForecastLoadError(fcData === null && !hasLoadedInitialDataRef.current);
       if (recsData !== null) setRecommendations(recsData);
-      setRecommendationsLoadError(recsData === null);
+      setRecommendationsLoadError(recsData === null && !hasLoadedInitialDataRef.current);
       if (vehData.length > 0) setVehicles(vehData);
       if (shipData.length > 0) setShipments(shipData);
+
+      if (anyDataSucceeded) {
+        hasLoadedInitialDataRef.current = true;
+        setIsStaleData(false);
+      }
     } catch (err) {
       console.error('Error loading initial SupplyFlow data:', err);
+      if (!hasLoadedInitialDataRef.current) {
+        setSystemStatus('offline');
+      } else {
+        setIsStaleData(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -240,7 +291,7 @@ export default function Home() {
 
   return (
     <div className="flex-1 flex flex-col min-h-screen">
-      <Header systemStatus={health ? health.status : 'offline'} />
+      <Header systemStatus={systemStatus} isStale={isStaleData} />
       <div className="flex flex-1 min-h-0">
         <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-tactical-800 bg-white px-3 py-5">
           <p className="px-3 pb-3 text-[10px] font-semibold uppercase tracking-[.14em] text-tactical-500">Workspace</p>
@@ -319,9 +370,9 @@ export default function Home() {
                 vehicles={vehicles}
                 shipments={shipments}
                 recommendations={recommendations}
-                recommendationsLoading={loading}
+                recommendationsLoading={loading && !hasLoadedInitialDataRef.current}
                 recommendationsLoadError={recommendationsLoadError}
-                isDataLoading={loading}
+                isDataLoading={loading && !hasLoadedInitialDataRef.current}
                 onTriggerOptimization={handleTriggerOptimization}
                 onRetrainForecast={handleRetrainForecasts}
                 onNavigateTab={(tab) => setActiveTab(tab)}
@@ -391,7 +442,7 @@ export default function Home() {
               onFiltersChange={handleForecastFiltersChange}
               isRetraining={isForecasting}
               metrics={forecastMetrics}
-              isLoading={loading}
+              isLoading={loading && !hasLoadedInitialDataRef.current}
               hasLoadError={forecastLoadError}
             />
           )}
@@ -422,7 +473,7 @@ export default function Home() {
           {activeTab === 'recommendations' && (
             <RecommendationsTab
               recommendations={recommendations}
-              isLoading={loading}
+              isLoading={loading && !hasLoadedInitialDataRef.current}
               hasLoadError={recommendationsLoadError}
               onTriggerOptimization={handleTriggerOptimization}
               isOptimizing={isOptimizing}
